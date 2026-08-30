@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Attention & Focus Monitoring Engine</title>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- TOP HEADER -->
+    <header class="app-header">
+      <div class="header-left">
+        <div>
+          <h1>Student Focus Monitoring Engine</h1>
+          <p class="subtitle">AI-Powered Real-Time Attention Detection (MediaPipe Tasks + SVM RBF)</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="status-pill" id="connection-status">
+          <span class="status-dot pulsing"></span>
+          <span id="conn-text">Menghubungkan...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 3-COLUMN DASHBOARD GRID -->
+    <main class="dashboard-grid-3col">
+      
+      <!-- LEFT COLUMN: ML PREDICTION & FOCUS SCORE -->
+      <section class="card ml-card">
+        <div class="card-header">
+          <h3>Klasifikasi Machine Learning</h3>
+          <span id="ml-badge" class="badge badge-idle">STANDBY</span>
+        </div>
+
+        <div class="ml-body">
+          <div class="score-display-vertical">
+            
+            <div class="focus-circle idle">
+              <span id="focus-score-val" class="score-number">--</span>
+              <span class="score-sub">Focus Score</span>
+            </div>
+
+            <div class="risk-info">
+              <div class="risk-row">
+                <span>Model Decision:</span>
+                <strong id="decision-text">Menunggu Wajah...</strong>
+              </div>
+              
+              <div class="risk-row">
+                <span>Distraction Risk:</span>
+                <strong id="risk-prob-text">--</strong>
+              </div>
+
+              <div class="risk-row">
+                <span>Keterangan:</span>
+                <strong id="reason-text">Wajah Belum Terdeteksi</strong>
+              </div>
+
+              <div class="progress-bar-container">
+                <div id="risk-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- CENTER COLUMN: LIVE CAMERA FEED -->
+      <section class="card video-card">
+        <div class="card-header">
+          <h3>Live Camera Stream</h3>
+          <span class="badge badge-live">LIVE FEED</span>
+        </div>
+        <div class="video-container">
+          <img id="video-stream" src="/video_feed" alt="Live Camera Feed">
+          <div class="video-overlay" id="video-overlay-status">
+            <span id="overlay-label">Memuat Deteksi...</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN: 9 RAW COMPUTER VISION INDICATORS -->
+      <section class="card telemetry-card">
+        <div class="card-header">
+          <h3>Indikator Visual Mentah</h3>
+          <span class="badge badge-idle">9 METRICS</span>
+        </div>
+
+        <div class="telemetry-grid-vertical">
+          
+          <div class="metric-box">
+            <div class="metric-header">
+              <span class="metric-title">Head Yaw (No-leh)</span>
+              <span class="metric-val" id="val-yaw">0.0°</span>
+            </div>
+            <div class="metric-bar-bg"><div id="bar-yaw" class="metric-bar-fill"></div></div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-header">
+              <span class="metric-title">Head Pitch (Nunduk/Dongak)</span>
+              <span class="metric-val" id="val-pitch">0.0°</span>
+            </div>
+            <div class="metric-bar-bg"><div id="bar-pitch" class="metric-bar-fill"></div></div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-header">
+              <span class="metric-title">Head Roll (Miring)</span>
+              <span class="metric-val" id="val-roll">0.0°</span>
+            </div>
+            <div class="metric-bar-bg"><div id="bar-roll" class="metric-bar-fill"></div></div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-header">
+              <span class="metric-title">Eye Openness / EAR <small>(Normal: 0.25 - 0.35)</small></span>
+              <span class="metric-val" id="val-ear">0.000</span>
+            </div>
+            <div class="metric-bar-bg"><div id="bar-ear" class="metric-bar-fill"></div></div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-header">
+              <span class="metric-title">Mouth Ratio / MAR <small>(Tertutup: < 0.15)</small></span>
+              <span class="metric-val" id="val-mar">0.000</span>
+            </div>
+            <div class="metric-bar-bg"><div id="bar-mar" class="metric-bar-fill"></div></div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-header">
+              <span class="metric-title">Blink / Sleep Score <small>(Tidur: > 0.55)</small></span>
+              <span class="metric-val" id="val-blink">0.00</span>
+            </div>
+            <div class="metric-bar-bg"><div id="bar-blink" class="metric-bar-fill"></div></div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-header">
+              <span class="metric-title">Gaze Down <small>(Lihat HP/Meja)</small></span>
+              <span class="metric-val" id="val-gaze-down">0.00</span>
+            </div>
+            <div class="metric-bar-bg"><div id="bar-gaze-down" class="metric-bar-fill"></div></div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-header">
+              <span class="metric-title">Gaze Up <small>(Mikir/Melamun)</small></span>
+              <span class="metric-val" id="val-gaze-up">0.00</span>
+            </div>
+            <div class="metric-bar-bg"><div id="bar-gaze-up" class="metric-bar-fill"></div></div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-header">
+              <span class="metric-title">Gaze Side <small>(Melirik Samping)</small></span>
+              <span class="metric-val" id="val-gaze-side">0.00</span>
+            </div>
+            <div class="metric-bar-bg"><div id="bar-gaze-side" class="metric-bar-fill"></div></div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

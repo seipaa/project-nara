@@ -1,0 +1,52 @@
+======================================================================
+LAPORAN EVALUASI MODEL SVM - Sistem Pemantauan Atensi Siswa
+Tanggal: 2026-08-30 16:57:16
+======================================================================
+
+1. KONFIGURASI MODEL
+   Kernel:         rbf
+   C (Regularization): 10
+   Gamma:          0.01
+   Class Weight:   balanced
+   Probability:    True (Platt Scaling)
+
+2. DATASET
+   Total:    1000 sampel
+   Training: 800 sampel (80%)
+   Testing:  200 sampel (20%)
+   Fitur:    20 dimensi
+   Scaling:  StandardScaler (z-normalization)
+
+3. CONFUSION MATRIX
+   True Positive  (TP): 91
+   True Negative  (TN): 97
+   False Positive (FP): 3
+   False Negative (FN): 9
+
+4. METRIK EVALUASI
+   Akurasi:     94.00%
+   Presisi:     96.81%
+   Recall:      91.00%
+   F1-Score:    0.9381
+   Specificity: 97.00%
+   ROC-AUC:     0.9353
+
+5. CLASSIFICATION REPORT
+                   precision    recall  f1-score   support
+
+Risiko Rendah (0)       0.92      0.97      0.94       100
+Risiko Tinggi (1)       0.97      0.91      0.94       100
+
+         accuracy                           0.94       200
+        macro avg       0.94      0.94      0.94       200
+     weighted avg       0.94      0.94      0.94       200
+
+
+6. FILE OUTPUT
+   Model:              models\focus_svm_model.joblib
+   Scaler:             models\feature_scaler.joblib
+   Confusion Matrix:   models\confusion_matrix.png
+   ROC Curve:          models\roc_curve.png
+   Feature Importance: models\feature_importance.png
+
+======================================================================
