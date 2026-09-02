@@ -36,11 +36,14 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 
-# ---------------------------------------------------------------------------
-# 1. KONFIGURASI MODEL & THRESHOLD MULTI-MODAL CERDAS
-# ---------------------------------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
-MODEL_PATH = "face_landmarker.task"
+if os.path.exists(os.path.join(BASE_DIR, "face_landmarker.task")):
+    MODEL_PATH = os.path.join(BASE_DIR, "face_landmarker.task")
+elif os.path.exists(os.path.join(BASE_DIR, "web_dashboard", "face_landmarker.task")):
+    MODEL_PATH = os.path.join(BASE_DIR, "web_dashboard", "face_landmarker.task")
+else:
+    MODEL_PATH = os.path.join(BASE_DIR, "face_landmarker.task")
 
 # --- Threshold Sudut Kepala (Head Pose Degrees) ---
 # Normal menatap laptop: Yaw ±18°, Pitch -15° s/d +12° (setelah kalibrasi baseline laptop)

@@ -42,8 +42,9 @@ from cv_focus_engine import (
 )
 from dataset_collector import SlidingWindowAggregator, FEATURE_COLUMNS
 
-DEFAULT_MODEL_PATH = os.path.join("models", "focus_svm_model.joblib")
-DEFAULT_SCALER_PATH = os.path.join("models", "feature_scaler.joblib")
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "models", "focus_svm_model.joblib")
+DEFAULT_SCALER_PATH = os.path.join(ROOT_DIR, "models", "feature_scaler.joblib")
 
 
 class FocusPredictor:

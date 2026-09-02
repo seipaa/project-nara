@@ -24,7 +24,8 @@ import sqlite3
 from datetime import datetime
 from collections import deque
 
-DB_PATH = "pomodoro_sessions.db"
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(ROOT_DIR, "pomodoro_sessions.db")
 
 # Mode Pomodoro (dalam detik)
 DEFAULT_STUDY_DURATION = 25 * 60      # 25 Menit

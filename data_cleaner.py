@@ -26,8 +26,9 @@ import sys
 
 import numpy as np
 
-INPUT_PATH = "raw_focus_dataset.csv"
-OUTPUT_PATH = "clean_focus_dataset.csv"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+INPUT_PATH = os.path.join(BASE_DIR, "raw_focus_dataset.csv")
+OUTPUT_PATH = os.path.join(BASE_DIR, "clean_focus_dataset.csv")
 TOTAL_CLEAN_SAMPLES = 1000  # 500 per kelas
 
 # Definisi kolom fitur dan label

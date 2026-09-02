@@ -61,8 +61,9 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # KONFIGURASI
 # ---------------------------------------------------------------------------
-DATASET_PATH = "clean_focus_dataset.csv"
-MODEL_DIR = "models"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASET_PATH = os.path.join(BASE_DIR, "clean_focus_dataset.csv")
+MODEL_DIR = os.path.join(BASE_DIR, "models")
 MODEL_PATH = os.path.join(MODEL_DIR, "focus_svm_model.joblib")
 SCALER_PATH = os.path.join(MODEL_DIR, "feature_scaler.joblib")
 CONFUSION_MATRIX_PATH = os.path.join(MODEL_DIR, "confusion_matrix.png")
