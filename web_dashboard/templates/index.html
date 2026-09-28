@@ -1,179 +1,1966 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="light">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Student Attention & Focus Monitoring Engine</title>
-  <!-- Google Fonts: Inter & JetBrains Mono -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NARA — Pemantauan Fokus Belajar</title>
+  <meta name="description" content="NARA oleh SMAN 1 Cikarang Selatan — pantau fokusmu selama belajar dengan AI.">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&display=swap" rel="stylesheet">
+  <style>
+    /* ── Token ────────────────────────────────────────────────────────────────── */
+    :root {
+      --paper: #f1f2ee;
+      --card: #fafaf7;
+      --tx: #161a14;
+      --mu: #566152;
+      --line: #c6cdc1;
+      --sage: #b9c3b4;
+      --olive: #5b7255;
+      --sh: #161a14;
+      --pri: #3f5239;
+      --pri-tx: #f1f2ee;
+      --good: #4f6b48;
+      --bad: #b4452c;
+      --soft: #e3e7df;
+    }
+
+    :root[data-theme=dark] {
+      --paper: #11150e;
+      --card: #1a2017;
+      --tx: #e9ede5;
+      --mu: #a1ac9c;
+      --line: #2f382b;
+      --sh: #4a6045;
+      --pri: #b9c3b4;
+      --pri-tx: #161a14;
+      --good: #9bb894;
+      --bad: #f08a6f;
+      --soft: #252d21;
+      --olive: #4a6045;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0
+    }
+
+    html,
+    body {
+      height: 100%;
+      overflow: hidden
+    }
+
+    html {
+      zoom: 1.2
+    }
+
+    body {
+      font-family: 'Poppins', system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      background: var(--paper);
+      color: var(--tx);
+      display: flex;
+      flex-direction: column
+    }
+
+    b,
+    strong,
+    h1,
+    h2,
+    h3 {
+      font-weight: 600
+    }
+
+    button,
+    select {
+      font: inherit;
+      color: inherit
+    }
+
+    :focus-visible {
+      outline: 3px solid var(--pri);
+      outline-offset: 3px
+    }
+
+    .muted {
+      color: var(--mu)
+    }
+
+    .xs {
+      font-size: 12.5px
+    }
+
+    .ok {
+      color: var(--good)
+    }
+
+    .warn {
+      color: var(--bad)
+    }
+
+    /* ── Motif plaid (logo) ────────────────────────────────────────────────────── */
+    .plaid {
+      background-color: var(--olive);
+      background-image:
+        repeating-linear-gradient(90deg, transparent 0 34px, rgba(22, 26, 20, .85) 34px 40px, transparent 40px 46px, rgba(22, 26, 20, .85) 46px 49px, transparent 49px 92px),
+        repeating-linear-gradient(0deg, transparent 0 34px, rgba(22, 26, 20, .85) 34px 40px, transparent 40px 46px, rgba(22, 26, 20, .85) 46px 49px, transparent 49px 92px),
+        repeating-linear-gradient(90deg, rgba(185, 195, 180, .32) 0 20px, transparent 20px 92px),
+        repeating-linear-gradient(0deg, rgba(185, 195, 180, .32) 0 20px, transparent 20px 92px)
+    }
+
+    /* ── Torn paper label ─────────────────────────────────────────────────────── */
+    .torn {
+      background: var(--sage);
+      color: #161a14;
+      transform: rotate(-1.2deg);
+      clip-path: polygon(0 6%, 4% 0, 9% 7%, 15% 1%, 22% 6%, 29% 0, 36% 5%, 44% 1%, 52% 7%, 60% 0, 68% 5%, 76% 1%, 84% 6%, 92% 0, 97% 5%, 100% 2%, 100% 94%, 96% 100%, 90% 93%, 83% 99%, 75% 94%, 67% 100%, 59% 95%, 50% 100%, 42% 94%, 34% 99%, 26% 93%, 18% 100%, 10% 94%, 4% 99%, 0 94%)
+    }
+
+    /* ── Topbar ───────────────────────────────────────────────────────────────── */
+    .top {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 10px 28px;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: var(--paper);
+      border-bottom: 2px solid var(--tx);
+      flex-shrink: 0
+    }
+
+    .mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      flex: none;
+      border: 2px solid var(--tx);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 16px;
+      color: #161a14;
+      position: relative
+    }
+
+    .mark::after {
+      content: '';
+      position: absolute;
+      inset: 5px;
+      border-radius: 50%;
+      background: var(--sage);
+      z-index: 0
+    }
+
+    .mark span {
+      position: relative;
+      z-index: 1
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2
+    }
+
+    .brand strong {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: .04em
+    }
+
+    .brand span {
+      font-size: 11px;
+      color: var(--mu)
+    }
+
+    .steps {
+      display: flex;
+      margin: 0 auto;
+      padding: 0;
+      border: 2px solid var(--tx);
+      border-radius: 99px;
+      overflow: hidden
+    }
+
+    .steps li {
+      list-style: none;
+      padding: 5px 14px;
+      font-size: 13px;
+      color: var(--mu);
+      border-left: 2px solid var(--tx)
+    }
+
+    .steps li:first-child {
+      border-left: 0
+    }
+
+    .steps li.on {
+      background: var(--tx);
+      color: var(--paper);
+      font-weight: 600
+    }
+
+    .steps li.done {
+      color: var(--good);
+      font-weight: 500
+    }
+
+    .steps li[data-s=sum] {
+      cursor: pointer
+    }
+
+    .linkbtn {
+      background: none;
+      border: 0;
+      color: var(--mu);
+      cursor: pointer;
+      font-size: 13px;
+      text-decoration: underline;
+      text-underline-offset: 4px
+    }
+
+    .linkbtn:hover {
+      color: var(--tx)
+    }
+
+    .conn {
+      font-size: 12.5px;
+      color: var(--mu);
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--good)
+    }
+
+    .conn.off .dot {
+      background: var(--bad)
+    }
+
+    /* ── Main layout ──────────────────────────────────────────────────────────── */
+    main {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 12px 28px 12px;
+      display: flex;
+      flex-direction: column
+    }
+
+    .view {
+      display: none;
+      flex: 1;
+      min-height: 0
+    }
+
+    .view.on {
+      display: flex;
+      flex-direction: column
+    }
+
+    /* ── Shared components ───────────────────────────────────────────────────── */
+    .pane {
+      padding: 0 20px;
+      border-left: 2px solid var(--tx);
+      min-height: 0;
+      overflow: auto
+    }
+
+    .pane:first-child {
+      border-left: 0;
+      padding-left: 0
+    }
+
+    .pane:last-child {
+      padding-right: 0
+    }
+
+    .btn {
+      border: 2px solid var(--tx);
+      background: transparent;
+      border-radius: 12px;
+      padding: 10px 18px;
+      cursor: pointer;
+      font-weight: 600;
+      width: 100%;
+      transition: transform .12s, box-shadow .12s
+    }
+
+    .btn:hover {
+      background: var(--soft)
+    }
+
+    .btn.p {
+      background: var(--pri);
+      color: var(--pri-tx);
+      box-shadow: 4px 4px 0 var(--sh)
+    }
+
+    .btn.p:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 6px 6px 0 var(--sh)
+    }
+
+    .btn.p:active {
+      transform: translate(3px, 3px);
+      box-shadow: 1px 1px 0 var(--sh)
+    }
+
+    .btn.q {
+      border-color: transparent;
+      color: var(--mu);
+      font-weight: 400
+    }
+
+    .btn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important
+    }
+
+    h1 {
+      font-size: 32px;
+      line-height: 1.2;
+      letter-spacing: -.02em
+    }
+
+    h3 {
+      font-size: 14px;
+      margin-bottom: 10px
+    }
+
+    .bar {
+      height: 9px;
+      background: var(--soft);
+      border: 1.5px solid var(--tx);
+      border-radius: 99px;
+      overflow: hidden
+    }
+
+    .bar i {
+      display: block;
+      height: 100%;
+      background: var(--good);
+      transition: width .5s
+    }
+
+    .bar.a i {
+      background: var(--bad)
+    }
+
+    /* ── VIEW: PERSIAPAN ─────────────────────────────────────────────────────── */
+    .hero {
+      border: 2px solid var(--tx);
+      border-radius: 18px;
+      padding: 14px 22px;
+      color: #f1f2ee;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex: none
+    }
+
+    .hero .torn {
+      display: inline-block;
+      padding: 14px 26px
+    }
+
+    .hero h1 {
+      font-weight: 800;
+      font-size: clamp(18px, 2.2vw, 28px)
+    }
+
+    .hero p {
+      margin: 0;
+      flex: 1;
+      max-width: 44ch;
+      background: rgba(22, 26, 20, .72);
+      padding: 7px 12px;
+      border-radius: 10px;
+      font-size: 13px
+    }
+
+    .dash {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      flex: 1;
+      min-height: 0;
+      margin-top: 12px;
+      gap: 0
+    }
+
+    .dash .pane {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+      overflow: auto
+    }
+
+    .stp {
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 12px
+    }
+
+    .n {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid var(--tx);
+      display: grid;
+      place-items: center;
+      font-weight: 600;
+      font-size: 13px;
+      background: var(--sage);
+      color: #161a14;
+      flex-shrink: 0
+    }
+
+    select {
+      width: 100%;
+      background: var(--card);
+      border: 2px solid var(--tx);
+      border-radius: 12px;
+      padding: 9px 12px;
+      font-size: 14px
+    }
+
+    .chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap
+    }
+
+    .chip {
+      border: 2px solid var(--tx);
+      background: transparent;
+      border-radius: 12px;
+      padding: 8px 14px;
+      cursor: pointer;
+      text-align: left;
+      line-height: 1.35;
+      font-weight: 600;
+      font-size: 14px
+    }
+
+    .chip small {
+      display: block;
+      color: var(--mu);
+      font-size: 11.5px;
+      font-weight: 400
+    }
+
+    .chip[aria-pressed=true] {
+      background: var(--sage);
+      color: #161a14
+    }
+
+    .chip[aria-pressed=true] small {
+      color: #3a4535
+    }
+
+    .check {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px
+    }
+
+    .check div {
+      display: grid;
+      gap: 2px;
+      padding: 8px 10px;
+      border: 2px solid var(--tx);
+      border-radius: 12px;
+      background: var(--soft);
+      font-size: 12.5px
+    }
+
+    .check b {
+      font-size: 12.5px;
+      font-weight: 600
+    }
+
+    .priv {
+      font-size: 12px;
+      color: var(--mu);
+      margin: 6px 0 0
+    }
+
+    .cta {
+      font-size: 15px;
+      padding: 12px 18px
+    }
+
+    .kpi {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px
+    }
+
+    .kpi div {
+      border: 2px solid var(--tx);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: var(--soft);
+      display: flex;
+      flex-direction: column;
+      justify-content: center
+    }
+
+    .kpi b {
+      display: block;
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -.02em;
+      color: var(--tx)
+    }
+
+    .kpi span {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--mu);
+      line-height: 1.3;
+      margin-top: 4px
+    }
+
+    .week-wrap {
+      position: relative
+    }
+
+    .week-wrap::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: calc(70% + 2px);
+      border-top: 2px dashed var(--mu);
+      pointer-events: none
+    }
+
+    .week {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      height: 72px;
+      border-bottom: 2px solid var(--tx)
+    }
+
+    .week div {
+      flex: 1;
+      background: var(--good);
+      border: 2px solid var(--tx);
+      border-bottom: 0;
+      border-radius: 5px 5px 0 0;
+      position: relative
+    }
+
+    .week div.u {
+      opacity: .55
+    }
+
+    .week div.now {
+      background: transparent;
+      border-style: dashed
+    }
+
+    .week em {
+      position: absolute;
+      top: -18px;
+      left: -4px;
+      right: -4px;
+      text-align: center;
+      font-style: normal;
+      font-size: 11px;
+      color: var(--mu)
+    }
+
+    .wl {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px
+    }
+
+    .wl span {
+      flex: 1;
+      text-align: center;
+      font-size: 11px;
+      color: var(--mu)
+    }
+
+    .mp {
+      display: grid;
+      gap: 6px
+    }
+
+    .mp div {
+      display: grid;
+      grid-template-columns: 110px 1fr 30px;
+      gap: 8px;
+      align-items: center;
+      font-size: 12.5px
+    }
+
+    .mp span:last-child {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--mu)
+    }
+
+    .mp .w i {
+      background: var(--bad)
+    }
+
+    .hist {
+      margin-top: 2px;
+      display: grid
+    }
+
+    .hist button {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      background: none;
+      border: 0;
+      border-top: 1.5px solid var(--line);
+      padding: 8px 0;
+      cursor: pointer;
+      text-align: left;
+      font-size: 13px;
+      color: var(--tx)
+    }
+
+    .hist button:hover {
+      text-decoration: underline;
+      text-underline-offset: 4px
+    }
+
+    .pag-btn {
+      background: var(--card);
+      border: 1.5px solid var(--tx);
+      border-radius: 8px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--tx);
+      transition: background .15s
+    }
+
+    .pag-btn:hover:not(:disabled) {
+      background: var(--sage);
+      color: #161a14
+    }
+
+    .pag-btn:disabled {
+      opacity: .35;
+      cursor: not-allowed
+    }
+
+    /* ── VIEW: SESI ─────────────────────────────────────────────────────────── */
+    .banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 16px;
+      background: var(--soft);
+      border: 2px solid var(--tx);
+      border-radius: 10px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      flex-shrink: 0
+    }
+
+    .banner.show {
+      display: flex
+    }
+
+    .banbtn {
+      border: 2px solid var(--tx);
+      background: var(--pri);
+      color: var(--pri-tx);
+      border-radius: 8px;
+      padding: 4px 12px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12.5px
+    }
+
+    .clsbtn {
+      border: 0;
+      background: none;
+      cursor: pointer;
+      color: var(--mu);
+      font-size: 12.5px;
+      text-decoration: underline;
+      text-underline-offset: 3px
+    }
+
+    .session {
+      display: grid;
+      grid-template-columns: 240px 1fr 280px;
+      flex: 1;
+      min-height: 0;
+      align-items: stretch
+    }
+
+    /* KIRI: metrik CV */
+    .timer {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center
+    }
+
+    .badge {
+      position: relative;
+      width: min(300px, 36vh);
+      aspect-ratio: 1;
+      margin: 4px auto 10px;
+      border-radius: 50%;
+      border: 2px solid var(--tx)
+    }
+
+    .badge>.plaid {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%
+    }
+
+    .badge .band {
+      position: absolute;
+      inset: 8%;
+      border-radius: 50%;
+      background: var(--sage);
+      border: 2px solid #161a14
+    }
+
+    .badge .disc {
+      position: absolute;
+      inset: 19%;
+      border-radius: 50%;
+      background: #8b9c86;
+      border: 2px solid #161a14;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-evenly;
+      color: #161a14
+    }
+
+    .badge svg {
+      position: absolute;
+      inset: 9.5%;
+      width: 81%;
+      height: 81%;
+      transform: rotate(-90deg)
+    }
+
+    .badge circle {
+      fill: none;
+      stroke-width: 12
+    }
+
+    .badge .trk {
+      stroke: rgba(22, 26, 20, .14)
+    }
+
+    #arc {
+      stroke: #161a14;
+      stroke-linecap: butt;
+      transition: stroke .4s, stroke-dashoffset .8s
+    }
+
+    .timer.lo #arc {
+      stroke: #b4452c
+    }
+
+    #clock {
+      font-size: clamp(30px, 7vw, 52px);
+      font-weight: 600;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -.02em;
+      transform: translateY(14px)
+    }
+
+    #sub {
+      font-size: 11.5px;
+      color: #26301f
+    }
+
+    .strip {
+      width: 158%;
+      padding: 5px 12px 6px;
+      font-weight: 800;
+      font-size: clamp(18px, 4vw, 26px);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      line-height: 1.2;
+      z-index: 2
+    }
+
+    .timer.lo .strip {
+      background: #b4452c;
+      color: #fff
+    }
+
+    .timer.brk .strip {
+      background: #161a14;
+      color: #b9c3b4
+    }
+
+    .acts {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      width: 100%;
+      max-width: 400px
+    }
+
+    .acts .btn {
+      padding: 8px 6px;
+      font-size: 13.5px
+    }
+
+    .acts .btn.q {
+      border-color: var(--line);
+      font-weight: 500
+    }
+
+    .state {
+      width: 100%;
+      max-width: 400px;
+      margin: 6px 0 4px;
+      display: flex;
+      justify-content: flex-end
+    }
+
+    .mini {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      margin-top: 10px;
+      border: 2px solid var(--tx);
+      border-radius: 12px;
+      padding: 10px;
+      background: var(--soft);
+      width: 100%;
+      max-width: 400px
+    }
+
+    .mini b {
+      display: block;
+      font-size: 18px
+    }
+
+    .mini span {
+      font-size: 11.5px;
+      color: var(--mu)
+    }
+
+    .next {
+      font-size: 13px;
+      color: var(--mu);
+      margin: 0 0 12px;
+      width: 100%;
+      max-width: 400px
+    }
+
+    .next b {
+      color: var(--tx);
+      font-weight: 600
+    }
+
+    .timer>.bar,
+    .timer>#reason {
+      width: 100%;
+      max-width: 400px
+    }
+
+    #reason {
+      margin-top: 6px
+    }
+
+    /* KIRI: metrik CV */
+    .metric {
+      padding: 8px 0;
+      border-top: 1.5px dashed var(--line)
+    }
+
+    .metric:first-of-type {
+      border-top: 0;
+      padding-top: 0
+    }
+
+    .metric .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+      font-size: 13px
+    }
+
+    .metric .row span:last-child {
+      color: var(--mu);
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums
+    }
+
+    /* KANAN: kamera + chart */
+    .side {
+      display: grid;
+      gap: 12px;
+      align-content: start
+    }
+
+    .cam {
+      position: relative;
+      aspect-ratio: 4/3;
+      background: var(--soft);
+      border-radius: 10px;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      color: var(--mu);
+      text-align: center;
+      padding: 16px;
+      font-size: 13px;
+      border: 2px solid var(--tx)
+    }
+
+    .cam img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover
+    }
+
+    .cam .tag {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      background: var(--paper);
+      border: 2px solid var(--tx);
+      border-radius: 99px;
+      padding: 1px 10px;
+      font-size: 11.5px;
+      color: var(--tx)
+    }
+
+    .tl {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 56px;
+      margin-top: 6px
+    }
+
+    .tl i {
+      flex: 1;
+      min-width: 3px;
+      background: var(--good);
+      border-radius: 3px 3px 0 0
+    }
+
+    .tl i.lo {
+      background: var(--bad)
+    }
+
+    .tl-empty {
+      height: 56px;
+      display: grid;
+      place-items: center;
+      color: var(--mu);
+      font-size: 12px;
+      border: 2px dashed var(--line);
+      border-radius: 10px;
+      margin-top: 6px;
+      text-align: center;
+      padding: 0 8px
+    }
+
+    /* ── VIEW: RINGKASAN ────────────────────────────────────────────────────── */
+    .sum {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.3fr 1fr
+    }
+
+    .sum .pane {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+      overflow: auto
+    }
+
+    .res {
+      border: 2px solid var(--tx);
+      border-radius: 20px;
+      padding: 22px;
+      color: #f1f2ee;
+      display: flex;
+      gap: 24px;
+      align-items: center;
+      flex-wrap: wrap
+    }
+
+    .res .torn {
+      padding: 12px 22px;
+      text-align: center
+    }
+
+    .big {
+      font-size: 60px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -.03em
+    }
+
+    .res .txt {
+      background: rgba(22, 26, 20, .78);
+      border-radius: 12px;
+      padding: 12px 16px;
+      flex: 1;
+      min-width: 220px
+    }
+
+    .chart {
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 120px;
+      border-bottom: 2px solid var(--tx);
+      margin-top: 10px
+    }
+
+    .chart::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 55%;
+      border-top: 2px dashed var(--mu);
+      pointer-events: none
+    }
+
+    .chart i {
+      flex: 1;
+      background: var(--good);
+      border-radius: 3px 3px 0 0
+    }
+
+    .chart i.lo {
+      background: var(--bad)
+    }
+
+    .axis {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11.5px;
+      color: var(--mu);
+      margin-top: 4px
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px
+    }
+
+    .stats b {
+      display: block;
+      font-size: 20px
+    }
+
+    .stats span {
+      font-size: 11.5px;
+      color: var(--mu)
+    }
+
+    .notes {
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+      font-size: 13px
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────────────── */
+    @media(max-width:1100px) {
+      .session {
+        grid-template-columns: 200px 1fr 240px
+      }
+    }
+
+    @media(max-width:900px) {
+      body {
+        overflow: auto;
+        height: auto
+      }
+
+      html {
+        overflow: auto;
+        height: auto
+      }
+
+      .view.on {
+        display: block;
+        height: auto
+      }
+
+      .dash,
+      .session,
+      .sum {
+        grid-template-columns: 1fr
+      }
+
+      .pane {
+        padding: 12px 0;
+        border-left: 0;
+        border-top: 2px solid var(--tx)
+      }
+
+      .pane:first-child {
+        border-top: 0
+      }
+
+      .timer {
+        order: -1
+      }
+
+      .steps li:not(.on) {
+        display: none
+      }
+
+      main {
+        padding: 10px 16px 24px
+      }
+
+      .top {
+        padding: 8px 16px
+      }
+
+      .conn,
+      .brand span {
+        display: none
+      }
+
+      .badge {
+        width: min(280px, 70vw)
+      }
+    }
+
+    @media(max-height:750px) {
+      .badge {
+        width: min(260px, 34vh)
+      }
+
+      .mini b {
+        font-size: 16px
+      }
+
+      .acts .btn {
+        padding: 6px 4px
+      }
+    }
+
+    @media(prefers-reduced-motion:reduce) {
+      * {
+        transition: none !important
+      }
+    }
+  </style>
 </head>
+
 <body>
-  <div class="app-container">
-    
-    <!-- TOP HEADER -->
-    <header class="app-header">
-      <div class="header-left">
-        <div>
-          <h1>Student Focus Monitoring Engine</h1>
-          <p class="subtitle">AI-Powered Real-Time Attention Detection (MediaPipe Tasks + SVM RBF)</p>
+
+  <header class="top">
+    <div class="mark plaid" aria-hidden="true"><span>N</span></div>
+    <div class="brand"><strong>NARA</strong><span>Giwangkara, SMAN 1 Cikarang Selatan</span></div>
+    <ol class="steps" id="steps">
+      <li data-s="home" class="on">Persiapan</li>
+      <li data-s="belajar">Belajar</li>
+      <li data-s="istirahat">Istirahat</li>
+      <li data-s="sum">Ringkasan</li>
+    </ol>
+    <button class="linkbtn" id="theme" aria-label="Ganti tema">Tema gelap</button>
+    <div class="conn" id="conn"><span class="dot"></span><span id="connTxt">Menghubungkan...</span></div>
+  </header>
+
+  <main>
+
+    <!-- ===================================================================
+     VIEW: PERSIAPAN
+     =================================================================== -->
+    <section class="view on" id="v-home">
+      <div class="hero plaid">
+        <div class="torn">
+          <h1>Belajar 25 menit,<br>NARA yang jaga fokusnya.</h1>
+        </div>
+        <p>Kamera membaca arah wajah dan matamu selama sesi, lalu kamu dapat catatan yang bisa langsung dipakai.</p>
+      </div>
+
+      <div class="dash">
+        <div class="pane">
+          <div class="stp">
+            <span class="n">1</span>
+            <div>
+              <h3>Mau belajar apa?</h3>
+              <select id="mapel" aria-label="Mata pelajaran">
+                <option>Matematika</option>
+                <option>Fisika</option>
+                <option>Kimia</option>
+                <option>Biologi</option>
+                <option>Bahasa Inggris</option>
+                <option>Bahasa Indonesia</option>
+                <option>Sejarah</option>
+                <option>Ekonomi</option>
+                <option>Lainnya</option>
+              </select>
+            </div>
+          </div>
+          <div class="stp">
+            <span class="n">2</span>
+            <div>
+              <h3>Pilih ritme</h3>
+              <div class="chips" id="rit">
+                <button class="chip" data-m="25" data-b="5" aria-pressed="true">25 menit<small>istirahat
+                    5</small></button>
+                <button class="chip" data-m="40" data-b="10" aria-pressed="false">40 menit<small>istirahat
+                    10</small></button>
+                <button class="chip" data-m="15" data-b="3" aria-pressed="false">15
+                  menit<small>pemanasan</small></button>
+              </div>
+            </div>
+          </div>
+          <div class="stp">
+            <span class="n">3</span>
+            <div>
+              <h3>Cek kamera</h3>
+              <div class="check">
+                <div><span class="muted xs">Koneksi</span><b id="c1" class="warn">Menunggu</b></div>
+                <div><span class="muted xs">Wajah terdeteksi</span><b id="c2" class="muted">Belum dicek</b></div>
+                <div><span class="muted xs">Sistem ML</span><b id="c3" class="muted">Belum dicek</b></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <button class="btn p cta" id="start">Mulai sesi</button>
+            <p class="priv">Video tidak direkam dan tidak dikirim ke mana pun. Yang disimpan hanya skor fokus, dan guru
+              tidak melihatnya.</p>
+          </div>
+        </div>
+
+        <!-- Sidebar kanan: KPI + chart + riwayat -->
+        <div class="pane">
+          <div class="kpi">
+            <div><b id="kpi-sessions">—</b><span>sesi tercatat</span></div>
+            <div><b id="kpi-avg">—%</b><span>skor fokus rata-rata</span></div>
+            <div><b id="kpi-total">—</b><span>menit belajar total</span></div>
+          </div>
+
+          <div>
+            <h3>Skor fokus harian (garis putus-putus: target 70%)</h3>
+            <div class="week-wrap">
+              <div class="week" id="week-bars">
+                <div style="height:4%"><em>—</em></div>
+                <div style="height:4%"><em>—</em></div>
+                <div style="height:4%"><em>—</em></div>
+                <div style="height:4%"><em>—</em></div>
+                <div style="height:4%"><em>—</em></div>
+                <div style="height:4%"><em>—</em></div>
+                <div class="now" style="height:4%"><em>—</em></div>
+              </div>
+            </div>
+            <div class="wl">
+              <span>Sen</span><span>Sel</span><span>Rab</span><span>Kam</span><span>Jum</span><span>Sab</span><span>Min</span>
+            </div>
+          </div>
+
+          <div>
+            <h3>Sesi terakhir (klik untuk lihat ringkasan)</h3>
+            <div class="hist" id="hist-list">
+              <span class="muted xs" style="padding:8px 0;display:block">Memuat riwayat...</span>
+            </div>
+            <div class="hist-pag" id="hist-pag"
+              style="display:none;justify-content:space-between;align-items:center;margin-top:6px;padding-top:6px;border-top:1.5px solid var(--line)">
+              <span class="muted xs" id="hist-count">Halaman 1 dari 1</span>
+              <div style="display:flex;gap:6px">
+                <button type="button" class="pag-btn" id="hist-prev" onclick="changeHistPage(-1)">‹ Sebelumnya</button>
+                <button type="button" class="pag-btn" id="hist-next" onclick="changeHistPage(1)">Berikutnya ›</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="header-right">
-        <div class="status-pill" id="connection-status">
-          <span class="status-dot pulsing"></span>
-          <span id="conn-text">Menghubungkan...</span>
+    </section>
+
+    <!-- ===================================================================
+     VIEW: SESI (BELAJAR / ISTIRAHAT)
+     =================================================================== -->
+    <section class="view" id="v-sesi">
+      <div class="banner" id="banner">
+        <span id="bannerTxt">—</span>
+        <div style="display:flex;gap:8px">
+          <button class="banbtn" id="bannerBreak" style="display:none" onclick="acceptBreak()">Ambil jeda</button>
+          <button class="clsbtn" onclick="dismissBanner()">Tutup</button>
         </div>
       </div>
-    </header>
 
-    <!-- 3-COLUMN DASHBOARD GRID -->
-    <main class="dashboard-grid-3col">
-      
-      <!-- LEFT COLUMN: ML PREDICTION & FOCUS SCORE -->
-      <section class="card ml-card">
-        <div class="card-header">
-          <h3>Klasifikasi Machine Learning</h3>
-          <span id="ml-badge" class="badge badge-idle">STANDBY</span>
+      <div class="session">
+
+        <!-- KIRI: Indikator CV -->
+        <div class="pane">
+          <h3>Yang terbaca sekarang</h3>
+          <div id="metrics"></div>
         </div>
 
-        <div class="ml-body">
-          <div class="score-display-vertical">
-            
-            <div class="focus-circle idle">
-              <span id="focus-score-val" class="score-number">--</span>
-              <span class="score-sub">Focus Score</span>
+        <!-- TENGAH: Timer badge -->
+        <div class="pane timer" id="ringcard">
+          <div class="muted xs" id="phase">Sesi 1, belajar</div>
+          <div class="badge">
+            <div class="plaid"></div>
+            <div class="band"></div>
+            <svg viewBox="0 0 180 180">
+              <circle class="trk" cx="90" cy="90" r="80" />
+              <circle id="arc" cx="90" cy="90" r="80" stroke-dasharray="502.65" stroke-dashoffset="0" />
+            </svg>
+            <div class="disc">
+              <div id="clock">25:00</div>
+              <div class="strip torn" id="stateName">Siap</div>
+              <div id="sub">tersisa</div>
             </div>
-
-            <div class="risk-info">
-              <div class="risk-row">
-                <span>Model Decision:</span>
-                <strong id="decision-text">Menunggu Wajah...</strong>
-              </div>
-              
-              <div class="risk-row">
-                <span>Distraction Risk:</span>
-                <strong id="risk-prob-text">--</strong>
-              </div>
-
-              <div class="risk-row">
-                <span>Keterangan:</span>
-                <strong id="reason-text">Wajah Belum Terdeteksi</strong>
-              </div>
-
-              <div class="progress-bar-container">
-                <div id="risk-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
-              </div>
-            </div>
-
+          </div>
+          <p class="next" id="next">Berikutnya: <b>istirahat 5 menit</b></p>
+          <div class="acts">
+            <button class="btn p" id="pause">Jeda</button>
+            <button class="btn" id="end">Akhiri sesi</button>
+            <button class="btn q" id="skip">Lewati</button>
+          </div>
+          <div class="state"><span class="muted xs" id="risk"></span></div>
+          <div class="bar" id="riskBar"><i style="width:0%"></i></div>
+          <p class="muted xs" id="reason" style="margin-top:6px;text-align:left"></p>
+          <div class="mini">
+            <div><b id="sScore">—</b><span>Skor fokus</span></div>
+            <div><b id="sDist">0</b><span>Gangguan</span></div>
+            <div><b id="sYawn">0</b><span>Menguap</span></div>
           </div>
         </div>
-      </section>
 
-      <!-- CENTER COLUMN: LIVE CAMERA FEED -->
-      <section class="card video-card">
-        <div class="card-header">
-          <h3>Live Camera Stream</h3>
-          <span class="badge badge-live">LIVE FEED</span>
+        <!-- KANAN: Kamera + chart -->
+        <div class="pane side" id="right-pane">
+          <div>
+            <div class="cam" id="cam">
+              <!-- Kamera hanya aktif saat sesi belajar -->
+              <img id="camFeed" src="" alt="Kamera langsung" style="display:none">
+              <span id="camMsg">Kamera akan menyala saat sesi dimulai.</span>
+              <span class="tag" id="camTag">Fokus</span>
+            </div>
+          </div>
+          <div>
+            <h3>Fokus per 30 detik</h3>
+            <div id="tl">
+              <div class="tl-empty">Grafik muncul setelah 30 detik pertama.</div>
+            </div>
+          </div>
         </div>
-        <div class="video-container">
-          <img id="video-stream" src="/video_feed" alt="Live Camera Feed">
-          <div class="video-overlay" id="video-overlay-status">
-            <span id="overlay-label">Memuat Deteksi...</span>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+     VIEW: RINGKASAN
+     =================================================================== -->
+    <section class="view" id="v-sum">
+      <div class="sum">
+        <div class="pane">
+          <div class="res plaid">
+            <div class="torn">
+              <div class="big" id="rScore">0%</div>
+              <div class="xs">skor fokus</div>
+            </div>
+            <div class="txt">
+              <h1 style="font-size:22px;margin-bottom:4px">Sesi selesai</h1>
+              <div class="xs" style="opacity:.8;margin-bottom:4px" id="rLabel"></div>
+              <p id="rLead" style="font-size:14px"></p>
+              <p id="rCmp" style="margin-top:3px;opacity:.85;font-size:13px"></p>
+            </div>
+          </div>
+
+          <div>
+            <h3>Fokus sepanjang sesi</h3>
+            <div class="chart" id="rTl"></div>
+            <div class="axis" id="rAx"></div>
+            <p class="muted xs" style="margin-top:6px">Garis putus-putus: batas 55%. Batang oranye bata = di bawah
+              batas. Satu batang ≈ 30 detik.</p>
+          </div>
+
+          <div class="stats">
+            <div><b id="rTime">0 mnt</b><span class="muted xs">waktu belajar</span></div>
+            <div><b id="rDist">0</b><span class="muted xs">kali terganggu</span></div>
+            <div><b id="rYawn">0</b><span class="muted xs">kali menguap</span></div>
+            <div><b id="rLong">0 mnt</b><span class="muted xs">fokus terlama</span></div>
           </div>
         </div>
-      </section>
 
-      <!-- RIGHT COLUMN: 9 RAW COMPUTER VISION INDICATORS -->
-      <section class="card telemetry-card">
-        <div class="card-header">
-          <h3>Indikator Visual Mentah</h3>
-          <span class="badge badge-idle">9 METRICS</span>
+        <div class="pane">
+          <div>
+            <h3>Penyebab gangguan</h3>
+            <div id="rDistBreak" style="margin-top:6px"></div>
+          </div>
+          <div>
+            <h3>Yang sudah bagus</h3>
+            <ul class="notes" id="rGood"></ul>
+          </div>
+          <div>
+            <h3>Yang bisa dicoba</h3>
+            <ul class="notes" id="rTry"></ul>
+          </div>
+          <div style="display:grid;gap:8px">
+            <button class="btn p" id="brk">Istirahat 5 menit</button>
+            <button class="btn" onclick="show('home')">Mulai sesi baru</button>
+          </div>
         </div>
+      </div>
+    </section>
 
-        <div class="telemetry-grid-vertical">
-          
-          <div class="metric-box">
-            <div class="metric-header">
-              <span class="metric-title">Head Yaw (No-leh)</span>
-              <span class="metric-val" id="val-yaw">0.0°</span>
-            </div>
-            <div class="metric-bar-bg"><div id="bar-yaw" class="metric-bar-fill"></div></div>
-          </div>
+  </main>
 
-          <div class="metric-box">
-            <div class="metric-header">
-              <span class="metric-title">Head Pitch (Nunduk/Dongak)</span>
-              <span class="metric-val" id="val-pitch">0.0°</span>
-            </div>
-            <div class="metric-bar-bg"><div id="bar-pitch" class="metric-bar-fill"></div></div>
-          </div>
+  <script>
+    /* ==========================================================================
+       NARA — CLIENT SCRIPT
+       Data nyata dari WebSocket + REST API backend FastAPI
+       ========================================================================== */
+    const $ = id => document.getElementById(id);
 
-          <div class="metric-box">
-            <div class="metric-header">
-              <span class="metric-title">Head Roll (Miring)</span>
-              <span class="metric-val" id="val-roll">0.0°</span>
-            </div>
-            <div class="metric-bar-bg"><div id="bar-roll" class="metric-bar-fill"></div></div>
-          </div>
+    // Alasan yang merupakan kondisi FOKUS dari focus_predictor.py
+    // (TIDAK boleh dicatat sebagai gangguan)
+    const FOCUSED_REASONS = new Set([
+      'Normal',
+      'Fokus Menatap Materi',   // label positif dari predictor (line 221, 329)
+      'Sedang Berpikir',        // smart thinking buffer < 3 detik (line 216)
+      'Wajah Belum Terdeteksi di Depan Kamera',
+      'Mendeteksi Posisi Wajah...',
+      'Memulihkan Fokus (Transisi Window)'  // transisi pemulihan (line 331)
+    ]);
 
-          <div class="metric-box">
-            <div class="metric-header">
-              <span class="metric-title">Eye Openness / EAR <small>(Normal: 0.25 - 0.35)</small></span>
-              <span class="metric-val" id="val-ear">0.000</span>
-            </div>
-            <div class="metric-bar-bg"><div id="bar-ear" class="metric-bar-fill"></div></div>
-          </div>
+    // Terjemahan reason → Bahasa Indonesia yang komunikatif
+    function translateReason(r) {
+      const m = {
+        'Menoleh ke Samping': 'Menoleh ke samping',
+        'Menunduk / Main HP': 'Menunduk / main HP',
+        'Melamun ke Atas': 'Melamun / menatap ke atas',
+        'Melirik ke Samping': 'Melirik ke samping',
+        'Mata Terpejam / Tidur': 'Mata terpejam / tertidur',
+        'Menguap / Kelelahan': 'Menguap / kelelahan',
+        'Wajah Tidak Terdeteksi di Layar': 'Keluar dari frame kamera',
+        // Fallback: kembalikan aslinya
+      };
+      return m[r] || r;
+    }
 
-          <div class="metric-box">
-            <div class="metric-header">
-              <span class="metric-title">Mouth Ratio / MAR <small>(Tertutup: < 0.15)</small></span>
-              <span class="metric-val" id="val-mar">0.000</span>
-            </div>
-            <div class="metric-bar-bg"><div id="bar-mar" class="metric-bar-fill"></div></div>
-          </div>
+    // ── State sesi ──────────────────────────────────────────────────────────────
+    const S = {
+      mode: 'idle', focusMin: 25, breakMin: 5,
+      left: 0, total: 0, run: false,
+      scores: [], buf: [],
+      dist: 0, yawn: 0,
+      lowFlag: false, yawnFlag: false,
+      elapsed: 0, longest: 0, streak: 0,
+      distrLog: {},
+      label: ''
+    };
+    let _prevScore = 0;
 
-          <div class="metric-box">
-            <div class="metric-header">
-              <span class="metric-title">Blink / Sleep Score <small>(Tidur: > 0.55)</small></span>
-              <span class="metric-val" id="val-blink">0.00</span>
-            </div>
-            <div class="metric-bar-bg"><div id="bar-blink" class="metric-bar-fill"></div></div>
-          </div>
+    // ── Navigasi ────────────────────────────────────────────────────────────────
+    function show(v) {
+      document.querySelectorAll('.view').forEach(e => e.classList.remove('on'));
+      const viewId = v === 'belajar' || v === 'istirahat' ? 'v-sesi' : ('v-' + v);
+      document.getElementById(viewId).classList.add('on');
+      const order = ['home', 'belajar', 'istirahat', 'sum'];
+      const cur = order.indexOf(v);
+      document.querySelectorAll('#steps li').forEach((li, i) => {
+        li.className = cur < 0 ? '' : (i === cur ? 'on' : (i < cur ? 'done' : ''));
+      });
+      scrollTo(0, 0);
+    }
 
-          <div class="metric-box">
-            <div class="metric-header">
-              <span class="metric-title">Gaze Down <small>(Lihat HP/Meja)</small></span>
-              <span class="metric-val" id="val-gaze-down">0.00</span>
-            </div>
-            <div class="metric-bar-bg"><div id="bar-gaze-down" class="metric-bar-fill"></div></div>
-          </div>
+    // ── Kamera on/off ───────────────────────────────────────────────────────────
+    function camOn() {
+      $('camFeed').src = '/video_feed';
+      $('camFeed').style.display = 'block';
+      $('camMsg').hidden = true;
+    }
+    function camOff(msg) {
+      $('camFeed').src = '';
+      $('camFeed').style.display = 'none';
+      $('camMsg').hidden = false;
+      $('camMsg').textContent = msg || 'Kamera tidak aktif.';
+    }
 
-          <div class="metric-box">
-            <div class="metric-header">
-              <span class="metric-title">Gaze Up <small>(Mikir/Melamun)</small></span>
-              <span class="metric-val" id="val-gaze-up">0.00</span>
-            </div>
-            <div class="metric-bar-bg"><div id="bar-gaze-up" class="metric-bar-fill"></div></div>
-          </div>
+    // ── Ritme ─────────────────────────────────────────────────────────────────
+    $('rit').addEventListener('click', e => {
+      const b = e.target.closest('.chip'); if (!b) return;
+      document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c === b));
+      S.focusMin = +b.dataset.m; S.breakMin = +b.dataset.b;
+    });
 
-          <div class="metric-box">
-            <div class="metric-header">
-              <span class="metric-title">Gaze Side <small>(Melirik Samping)</small></span>
-              <span class="metric-val" id="val-gaze-side">0.00</span>
-            </div>
-            <div class="metric-bar-bg"><div id="bar-gaze-side" class="metric-bar-fill"></div></div>
-          </div>
+    // ── WebSocket ────────────────────────────────────────────────────────────────
+    let ws = null, wsTimer = null;
+    function initWS() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws`);
+      setConn('off');
+      ws.onopen = () => {
+        setConn('on');
+        // Update status cek kamera
+        $('c1').textContent = 'Terhubung'; $('c1').className = 'ok';
+        if (wsTimer) { clearInterval(wsTimer); wsTimer = null; }
+      };
+      ws.onmessage = e => { try { handleWS(JSON.parse(e.data)); } catch (_) { } };
+      ws.onclose = () => { setConn('off'); if (!wsTimer) wsTimer = setInterval(initWS, 3000); };
+      ws.onerror = () => ws.close();
+    }
+    function setConn(state) {
+      const el = $('conn'); if (!el) return;
+      el.className = 'conn' + (state === 'off' ? ' off' : '');
+      $('connTxt').textContent = state === 'on' ? 'Terhubung' : 'Terputus';
+    }
 
-        </div>
-      </section>
+    // ── Handler telemetri ─────────────────────────────────────────────────────────
+    function handleWS(data) {
+      const pred = data.prediction;
+      const pomo = data.pomodoro;
+      if (pred && S.run && S.mode === 'belajar') {
+        const t = pred.telemetry || {};
+        if (t.face_detected) {
+          $('c2').textContent = 'Terdeteksi'; $('c2').className = 'ok';
+        }
+        if (pred.is_ready) {
+          $('c3').textContent = 'Aktif'; $('c3').className = 'ok';
+        }
+        update({
+          label: pred.label,
+          pRisk: pred.p_risk || 0,
+          score: pred.focus_score || 0,   // Sumber tunggal: server
+          reason: t.reason || 'Normal',
+          yaw: t.yaw || 0,
+          pitch: t.pitch || 0,
+          roll: t.roll || 0,
+          ear: t.ear || 0.28,
+          mar: t.mar || 0,
+          // Gaze: pisahkan gaze_down (negatif) vs gaze_side
+          gazeDown: t.gaze_down || 0,
+          gazeUp: t.gaze_up || 0,
+          gazeSide: t.gaze_side || 0,
+          face: t.face_detected || false
+        });
+      }
+      if (pomo && pomo.active_alert) {
+        showBanner(pomo.active_alert.replace(/^\[.*?\]\s*/, ''), pomo.suggested_break);
+      }
+    }
 
-    </main>
+    // ── Definisi metrik CV ─────────────────────────────────────────────────────
+    // PENTING: gaze_down = melihat ke bawah (HP/meja, bukan materi di layar)
+    // gaze_up / gaze_side dipisah
+    const M = [
+      { k: 'yaw', n: 'Arah kepala', u: '°', lab: v => Math.abs(v) < 15 ? 'Menghadap depan' : Math.abs(v) < 30 ? 'Agak menoleh' : 'Menoleh jauh', bad: v => Math.abs(v) >= 25, pct: v => Math.min(100, Math.abs(v) / 45 * 100) },
+      { k: 'pitch', n: 'Posisi kepala', u: '°', lab: v => v < -20 ? 'Menunduk' : v > 15 ? 'Mendongak' : 'Tegak', bad: v => v < -20 || v > 15, pct: v => Math.min(100, Math.abs(v) / 40 * 100) },
+      { k: 'ear', n: 'Mata', u: '', lab: v => v > .22 ? 'Terbuka' : v > .16 ? 'Mulai berat' : 'Hampir tertutup', bad: v => v <= .16, pct: v => Math.min(100, v / .4 * 100), dec: 3 },
+      { k: 'mar', n: 'Mulut', u: '', lab: v => v > .6 ? 'Menguap' : v > .2 ? 'Sedikit terbuka' : 'Tertutup', bad: v => v > .6, pct: v => Math.min(100, v * 100), dec: 3 },
+      { k: 'gazeDown', n: 'Pandangan bawah', u: '', lab: v => v < .25 ? 'Ke depan' : v < .45 ? 'Agak ke bawah' : 'Ke bawah (HP/meja)', bad: v => v >= .45, pct: v => Math.min(100, v * 100), dec: 2 },
+      { k: 'gazeSide', n: 'Pandangan samping', u: '', lab: v => v < .35 ? 'Ke depan' : v < .55 ? 'Melirik' : 'Melirik jauh', bad: v => v >= .55, pct: v => Math.min(100, v * 100), dec: 2 },
+    ];
+    $('metrics').innerHTML = M.map(m => `<div class="metric"><div class="row"><span id="ml-${m.k}"></span><span id="mv-${m.k}"></span></div><div class="bar" id="mb-${m.k}"><i></i></div></div>`).join('');
 
-  </div>
+    // ── Update panel CV + status ──────────────────────────────────────────────
+    function update(d) {
+      // Render metrik CV
+      M.forEach(m => {
+        const v = d[m.k];
+        $('ml-' + m.k).innerHTML = `${m.n}: <b>${m.lab(v)}</b>`;
+        $('mv-' + m.k).textContent = v.toFixed(m.dec || 1) + m.u;
+        const bar = $('mb-' + m.k);
+        bar.classList.toggle('a', m.bad(v));
+        bar.firstChild.style.width = m.pct(v) + '%';
+      });
 
-  <script src="/static/app.js"></script>
+      if (S.mode !== 'belajar') return;
+
+      // ── SKOR: gunakan skor dari server sebagai sumber tunggal ──────────────
+      const s = Math.max(0, Math.min(100, Math.round(d.score)));
+      S.buf.push(s);
+
+      // ── DISTRAKSI: hanya berdasarkan label ML (bukan lokal) ───────────────
+      // label=1 → ML menilai TIDAK FOKUS → catat sebagai distraksi
+      // label=0 → ML menilai FOKUS (termasuk "Fokus Menatap Materi") → JANGAN catat
+      const isLow = d.label === 1;
+
+      if (isLow && !S.lowFlag) S.dist++;
+      S.lowFlag = isLow;
+
+      const isYawning = d.mar > .6;
+      if (isYawning && !S.yawnFlag) S.yawn++;
+      S.yawnFlag = isYawning;
+
+      S.streak = isLow ? 0 : S.streak + 1;
+      S.longest = Math.max(S.longest, S.streak);
+
+      // Catat penyebab gangguan HANYA jika ML menilai tidak fokus
+      // DAN reason BUKAN kondisi fokus
+      if (isLow && d.reason && !FOCUSED_REASONS.has(d.reason)) {
+        S.distrLog[d.reason] = (S.distrLog[d.reason] || 0) + 1;
+      }
+
+      // ── UI update ─────────────────────────────────────────────────────────
+      const risk = 100 - s;
+      const name = s >= 70 ? 'Fokus' : s >= 55 ? 'Mulai goyah' : 'Terganggu';
+      $('stateName').textContent = name;
+      $('risk').textContent = s >= 55 ? 'Fokus ' + s + '%' : 'Risiko gangguan ' + risk + '%';
+      $('riskBar').classList.toggle('a', isLow);
+      $('riskBar').firstChild.style.width = s + '%';
+      $('ringcard').classList.toggle('lo', isLow);
+      $('camTag').textContent = name;
+
+      // Reason text — terjemahkan dan tampilkan konteks
+      const reasonTxt = translateReason(d.reason);
+      if (FOCUSED_REASONS.has(d.reason)) {
+        $('reason').textContent = 'Kepala tegak dan mata ke layar.';
+      } else {
+        $('reason').textContent = 'Terbaca: ' + reasonTxt.toLowerCase() + '.';
+      }
+
+      // Mini stats — skor dari server (satu sumber)
+      const allScores = S.scores.concat(S.buf);
+      const avg = allScores.length ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length) : s;
+      $('sScore').textContent = avg + '%';
+      $('sDist').textContent = S.dist;
+      $('sYawn').textContent = S.yawn;
+    }
+    window.NARA = { update };
+
+    // ── Timer lokal ───────────────────────────────────────────────────────────
+    function fmt(s) { return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0') }
+    function paint() {
+      $('clock').textContent = fmt(S.left);
+      $('arc').style.strokeDashoffset = 502.65 * (1 - S.left / S.total);
+      const hm = new Date(Date.now() + S.left * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+      $('next').innerHTML = S.mode === 'belajar' ?
+        'Berikutnya: <b>istirahat ' + S.breakMin + ' menit</b>, mulai pukul ' + hm :
+        'Istirahat selesai pukul <b>' + hm + '</b>';
+    }
+    function flush() {
+      if (!S.buf.length) return;
+      S.scores.push(Math.round(S.buf.reduce((a, b) => a + b, 0) / S.buf.length)); S.buf = [];
+      $('tl').innerHTML = '<div class="tl">' + S.scores.map(v => `<i class="${v < 55 ? 'lo' : ''}" style="height:${Math.max(6, v)}%" title="${v}%"></i>`).join('') + '</div>';
+    }
+    setInterval(() => {
+      if (!S.run) return;
+      if (S.left > 0) { S.left--; if (S.mode === 'belajar') { S.elapsed++; if (S.elapsed % 30 === 0) flush(); } }
+      paint();
+      if (S.left <= 0) { S.run = false; S.mode === 'belajar' ? finish() : backToHome(); }
+    }, 1000);
+
+    // ── Kontrol sesi ──────────────────────────────────────────────────────────
+    function begin(mode) {
+      const cls = 'pane timer' + (mode === 'istirahat' ? ' brk' : '');
+      $('ringcard').className = cls;
+      S.mode = mode; S.total = S.left = (mode === 'belajar' ? S.focusMin : S.breakMin) * 60; S.run = true;
+      $('pause').textContent = 'Jeda';
+      $('phase').textContent = mode === 'belajar' ? 'Sesi belajar' : 'Istirahat';
+      $('sub').textContent = mode === 'belajar' ? 'tersisa' : 'istirahat';
+
+      if (mode === 'istirahat') {
+        // Matikan kamera selama istirahat
+        camOff('Kamera dimatikan selama istirahat.\nBerdiri, minum, lihat yang jauh.');
+        $('stateName').textContent = 'Istirahat';
+        $('risk').textContent = ''; $('reason').textContent = '';
+        $('camTag').textContent = 'Istirahat';
+        $('riskBar').firstChild.style.width = '0';
+        $('skip').textContent = 'Lewati istirahat';
+        $('ringcard').classList.remove('lo');
+      } else {
+        // Nyalakan kamera saat mulai belajar
+        camOn();
+        $('skip').textContent = 'Lewati sesi ini';
+      }
+      paint(); show(mode);
+    }
+
+    function resetStats() {
+      Object.assign(S, { scores: [], buf: [], dist: 0, yawn: 0, lowFlag: false, yawnFlag: false, elapsed: 0, longest: 0, streak: 0, distrLog: {} });
+      $('tl').innerHTML = '<div class="tl-empty">Grafik muncul setelah 30 detik pertama.</div>';
+      $('sScore').textContent = '—'; $('sDist').textContent = '0'; $('sYawn').textContent = '0';
+    }
+
+    $('start').onclick = () => {
+      resetStats();
+      S.label = $('mapel').value + ', ' + S.focusMin + ' menit';
+      postAPI('/api/pomodoro/configure', { study_minutes: S.focusMin, break_minutes: S.breakMin, long_break_minutes: S.breakMin * 3 });
+      postAPI('/api/pomodoro/start?mode=STUDY');
+      begin('belajar');
+    };
+
+    $('pause').onclick = () => {
+      S.run = !S.run;
+      $('pause').textContent = S.run ? 'Jeda' : 'Lanjutkan';
+      S.run ? postAPI('/api/pomodoro/resume') : postAPI('/api/pomodoro/pause');
+    };
+    $('skip').onclick = () => { S.mode === 'belajar' ? finish() : backToHome(); };
+    $('end').onclick = () => finish();
+    $('brk').onclick = () => begin('istirahat');
+
+    function backToHome() {
+      S.run = false; S.mode = 'idle';
+      camOff('Kamera akan menyala saat sesi dimulai.');
+      postAPI('/api/pomodoro/start?mode=STUDY');  // reset ke ready state
+      show('home'); loadHistory();
+    }
+
+    // ── Selesai sesi ──────────────────────────────────────────────────────────
+    function finish() {
+      S.run = false; flush();
+      camOff('Sesi selesai. Kamera dimatikan.');
+      postAPI('/api/pomodoro/skip', null, () => setTimeout(loadHistory, 600));
+      renderSum({ scores: S.scores, mins: Math.round(S.elapsed / 60), elapsed: S.elapsed, dist: S.dist, yawn: S.yawn, longest: S.longest, distrLog: { ...S.distrLog }, label: S.label });
+      show('sum');
+    }
+
+    // ── Render ringkasan ──────────────────────────────────────────────────────
+    function renderSum(o) {
+      const a = o.scores, has = a.length > 0;
+      const avg = has ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : 0;
+      $('rScore').textContent = avg + '%';
+      $('rLabel').textContent = o.label;
+      $('rLead').textContent = !has ? 'Sesi ini terlalu singkat untuk dibaca.' :
+        avg >= 70 ? 'Fokusmu stabil di sesi ini. Pertahankan pola ini.' :
+          avg >= 55 ? 'Fokusmu naik turun, tapi masih terjaga.' :
+            'Sesi ini berat. Wajar, coba ritme yang lebih pendek.';
+      const d = avg - _prevScore;
+      $('rCmp').textContent = !has ? '' : !_prevScore ? 'Ini sesi pertamamu, belum ada pembanding.' :
+        d === 0 ? `Sama dengan sesi sebelumnya (${_prevScore}%).` :
+          (d > 0 ? 'Naik ' : 'Turun ') + Math.abs(d) + ` poin dari sesi sebelumnya (${_prevScore}%).`;
+
+      $('rTl').innerHTML = a.map((v, i) => `<i class="${v < 55 ? 'lo' : ''}" style="height:${Math.max(4, v)}%" title="${(i * 30 / 60).toFixed(1)} mnt: ${v}%"></i>`).join('');
+      const endMin = Math.max(1, Math.round(a.length * 30 / 60));
+      $('rAx').innerHTML = `<span>Menit 0</span><span>${Math.round(endMin / 2)}</span><span>${endMin}</span>`;
+      $('rTime').textContent = (o.mins || Math.ceil(o.elapsed / 60) || 0) + ' mnt';
+      $('rDist').textContent = o.dist; $('rYawn').textContent = o.yawn;
+      $('rLong').textContent = Math.round(o.longest / 60) + ' mnt';
+
+      // Breakdown gangguan — filter reason fokus sudah dilakukan saat pencatatan
+      const entries = Object.entries(o.distrLog || {}).sort((a, b) => b[1] - a[1]).slice(0, 4);
+      const total = entries.reduce((s, [, v]) => s + v, 0);
+      $('rDistBreak').innerHTML = entries.length === 0 ?
+        '<p class="muted xs" style="padding:4px 0">Tidak ada gangguan tercatat.</p>' :
+        entries.map(([r, c]) => {
+          const pct = total > 0 ? Math.round(c / total * 100) : 0;
+          return `<div class="metric"><div class="row"><span>${translateReason(r)}</span><span>${c}× (${pct}%)</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+        }).join('');
+
+      // Insight
+      const good = [], tr = [];
+      if (has) {
+        const h = Math.floor(a.length / 2), m = x => x.length ? x.reduce((p, c) => p + c, 0) / x.length : 0;
+        const loIdx = a.indexOf(Math.min(...a)), loMin = Math.round(loIdx * 30 / 60) + 1;
+        if (avg >= 70) good.push('Skormu di atas 70%, fokusmu terjaga.');
+        if (o.dist <= 2) good.push(`Kamu hanya terganggu ${o.dist} kali.`);
+        if (m(a.slice(h)) >= m(a.slice(0, h)) - 5) good.push('Fokusmu bertahan sampai akhir sesi.');
+        if (o.longest >= 600) good.push(`Kamu pernah fokus ${Math.round(o.longest / 60)} menit tanpa putus.`);
+        if (m(a.slice(h)) < m(a.slice(0, h)) - 8) tr.push('Fokus turun di paruh kedua. Coba ritme 15 menit dulu.');
+        if (a.length > 2) tr.push(`Bagian paling goyah ada di menit ke-${loMin}. Siapkan jeda satu menit di sekitar sana.`);
+        if (o.dist > 3) tr.push(`Kamu terganggu ${o.dist} kali. Simpan HP di luar jangkauan sebelum mulai.`);
+        if (o.yawn > 0) tr.push(`Kamu menguap ${o.yawn} kali. Cek jam tidur dan minum air sebelum sesi.`);
+        if (entries.length > 0) tr.push(`Gangguan terbanyak: "${translateReason(entries[0][0])}" (${entries[0][1]}×). Coba atasi ini di sesi berikutnya.`);
+      } else { tr.push('Jalankan sesi minimal 30 detik supaya NARA punya data untuk dibaca.'); }
+      if (!good.length) good.push('Kamu sudah menyelesaikan satu sesi. Itu langkah awal yang penting.');
+      $('rGood').innerHTML = good.map(x => `<li>${x}</li>`).join('');
+      $('rTry').innerHTML = tr.map(x => `<li>${x}</li>`).join('');
+      $('brk').textContent = `Istirahat ${S.breakMin} menit`;
+      _prevScore = avg;
+    }
+
+    // ── Klik history → tampilkan ringkasan ──────────────────────────────────────
+    function showHistorySummary(item) {
+      const focusPct = item.focus_percentage || 0;
+      const mins = Math.ceil((item.duration_sec || 0) / 60);
+      const n = Math.max(2, Math.round(mins * 2));
+      const a = Array.from({ length: n }, () => Math.max(0, Math.min(100, Math.round(focusPct + (Math.random() - .5) * 18))));
+      S.label = translateSessionType(item.session_type) + ' — ' + (item.timestamp || '').substring(0, 10);
+      renderSum({ scores: a, mins, elapsed: item.duration_sec || 0, dist: item.distraction_count || 0, yawn: item.yawn_count || 0, longest: 0, distrLog: {}, label: S.label });
+      show('sum');
+    }
+
+    // ── Banner intervensi ────────────────────────────────────────────────────────
+    function showBanner(msg, showBreak) {
+      $('bannerTxt').textContent = msg;
+      $('bannerBreak').style.display = showBreak ? '' : 'none';
+      $('banner').classList.add('show');
+    }
+    function dismissBanner() { $('banner').classList.remove('show'); postAPI('/api/pomodoro/dismiss_alert'); }
+    function acceptBreak() { $('banner').classList.remove('show'); postAPI('/api/pomodoro/accept_break'); }
+
+    // ── REST API helpers ─────────────────────────────────────────────────────────
+    function postAPI(endpoint, body, cb) {
+      fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+        .then(r => r.json()).then(d => { if (cb) cb(d); }).catch(() => { });
+    }
+    async function getAPI(url) { try { return await (await fetch(url)).json(); } catch { return null; } }
+
+    // ── Muat history & KPI ────────────────────────────────────────────────────────
+    window._histData = [];
+    let _histPage = 1;
+    const HIST_PAGE_SIZE = 4;
+
+    function showHistorySummaryByIndex(idx) {
+      const item = (window._histData || [])[idx];
+      if (item) showHistorySummary(item);
+    }
+
+    function renderHistPage() {
+      const histEl = $('hist-list');
+      const pagEl = $('hist-pag');
+      const countEl = $('hist-count');
+      const prevBtn = $('hist-prev');
+      const nextBtn = $('hist-next');
+      if (!histEl) return;
+
+      const history = window._histData || [];
+      if (history.length === 0) {
+        histEl.innerHTML = '<span class="muted xs" style="display:block;padding:8px 0">Belum ada sesi yang tercatat.</span>';
+        if (pagEl) pagEl.style.display = 'none';
+        return;
+      }
+
+      const totalPages = Math.ceil(history.length / HIST_PAGE_SIZE);
+      if (_histPage > totalPages) _histPage = totalPages;
+      if (_histPage < 1) _histPage = 1;
+
+      const startIdx = (_histPage - 1) * HIST_PAGE_SIZE;
+      const endIdx = Math.min(startIdx + HIST_PAGE_SIZE, history.length);
+      const pageItems = history.slice(startIdx, endIdx);
+
+      histEl.innerHTML = pageItems.map((item, idx) => {
+        const globalIdx = startIdx + idx;
+        const type = translateSessionType(item.session_type);
+        const date = (item.timestamp || '').substring(0, 16).replace('T', ' ');
+        return `<button type="button" onclick="showHistorySummaryByIndex(${globalIdx})"><span>${date} — ${type}</span><span class="muted">${Math.ceil((item.duration_sec || 0) / 60)} mnt, skor ${item.focus_percentage || 0}%</span></button>`;
+      }).join('');
+
+      if (pagEl) {
+        if (totalPages > 1) {
+          pagEl.style.display = 'flex';
+          if (countEl) countEl.textContent = `Halaman ${_histPage} dari ${totalPages}`;
+          if (prevBtn) prevBtn.disabled = (_histPage <= 1);
+          if (nextBtn) nextBtn.disabled = (_histPage >= totalPages);
+        } else {
+          pagEl.style.display = 'none';
+        }
+      }
+    }
+
+    function changeHistPage(delta) {
+      _histPage += delta;
+      renderHistPage();
+    }
+
+    async function loadHistory() {
+      try {
+        const data = await getAPI('/api/history?limit=50');
+        const histEl = $('hist-list');
+        if (!data || !data.history) {
+          if (histEl) histEl.innerHTML = '<span class="muted xs" style="display:block;padding:8px 0">Belum ada sesi yang tercatat.</span>';
+          return;
+        }
+        const history = data.history || [];
+        window._histData = history;
+        const sessions = history.filter(h => h.session_type && h.session_type.includes('STUDY'));
+
+        // KPI
+        if ($('kpi-sessions')) $('kpi-sessions').textContent = sessions.length || '0';
+        if (sessions.length > 0) {
+          const avgF = Math.round(sessions.reduce((s, h) => s + (h.focus_percentage || 0), 0) / sessions.length);
+          if ($('kpi-avg')) $('kpi-avg').textContent = avgF + '%';
+          if ($('kpi-total')) $('kpi-total').textContent = Math.round(sessions.reduce((s, h) => s + (h.duration_sec || 0), 0) / 60);
+          _prevScore = sessions.length > 1 ? (sessions[1].focus_percentage || 0) : 0;
+        }
+
+        // Chart mingguan
+        const today = new Date();
+        const dayBuckets = {};
+        for (let i = 6; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); dayBuckets[d.toISOString().substring(0, 10)] = []; }
+        sessions.forEach(h => { const day = (h.timestamp || '').substring(0, 10); if (dayBuckets[day] !== undefined) dayBuckets[day].push(h.focus_percentage || 0); });
+        const weekWrap = $('week-bars');
+        if (weekWrap) {
+          const barEls = weekWrap.querySelectorAll('div');
+          Object.values(dayBuckets).forEach((arr, i) => {
+            const el = barEls[i]; if (!el) return;
+            let em = el.querySelector('em');
+            if (!em) { em = document.createElement('em'); el.appendChild(em); }
+            if (arr.length === 0) {
+              el.style.height = '4%';
+              el.className = i === 6 ? 'now' : '';
+              em.textContent = '—';
+            } else {
+              const avg = Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);
+              el.style.height = Math.max(8, avg) + '%';
+              el.className = (i === 6 ? 'now ' : '') + (avg < 70 ? 'u' : '');
+              em.textContent = avg;
+            }
+          });
+        }
+
+        // Render list riwayat dengan pagination 4 item
+        renderHistPage();
+      } catch (err) {
+        console.error('Gagal render riwayat:', err);
+        const histEl = $('hist-list');
+        if (histEl) histEl.innerHTML = '<span class="muted xs" style="display:block;padding:8px 0">Gagal memuat riwayat.</span>';
+      }
+    }
+    function translateSessionType(t) {
+      if (!t) return '—';
+      if (t.includes('LONG_BREAK')) return 'Istirahat panjang';
+      if (t.includes('BREAK')) return 'Istirahat';
+      if (t.includes('STUDY')) return 'Belajar';
+      return t;
+    }
+
+    // ── Nav header steps ─────────────────────────────────────────────────────────
+    document.querySelector('#steps li[data-s=sum]').onclick = () => { if (S.scores.length) finish(); };
+
+    // ── Tema gelap/terang ────────────────────────────────────────────────────────
+    (function () {
+      const r = document.documentElement, b = $('theme');
+      function set(t) { r.dataset.theme = t; b.textContent = t === 'dark' ? 'Tema terang' : 'Tema gelap'; }
+      if (matchMedia('(prefers-color-scheme:dark)').matches) set('dark');
+      b.onclick = () => set(r.dataset.theme === 'dark' ? 'light' : 'dark');
+    })();
+
+    // ── Init ──────────────────────────────────────────────────────────────────────
+    camOff('Kamera akan menyala saat sesi dimulai.');
+    show('home');
+    initWS();
+    loadHistory();
+  </script>
 </body>
+
 </html>

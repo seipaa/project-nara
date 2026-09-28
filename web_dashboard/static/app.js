@@ -1,388 +1,572 @@
 /* ==========================================================================
-   SMART STUDENT FOCUS MONITORING & ADAPTIVE POMODORO - CLIENT SCRIPT
+   NARA PROJECT — CLIENT SCRIPT v3
+   State: welcome → dashboard → summary overlay / history
    ========================================================================== */
 
+// ---------------------------------------------------------------------------
+// GLOBAL STATE
+// ---------------------------------------------------------------------------
 let ws = null;
-let reconnectTimer = null;
+let wsReconnectTimer = null;
 
-// DOM Elements Cache
-const connStatus = document.getElementById("connection-status");
-const connText = document.getElementById("conn-text");
-const statusDot = connStatus ? connStatus.querySelector(".status-dot") : null;
+// Snapshot state terakhir dari server
+let lastPomoData = null;
+let lastPredData = null;
 
-// Telemetry Elements
-const valYaw = document.getElementById("val-yaw");
-const barYaw = document.getElementById("bar-yaw");
-const valPitch = document.getElementById("val-pitch");
-const barPitch = document.getElementById("bar-pitch");
-const valRoll = document.getElementById("val-roll");
-const barRoll = document.getElementById("bar-roll");
-const valEar = document.getElementById("val-ear");
-const barEar = document.getElementById("bar-ear");
-const valMar = document.getElementById("val-mar");
-const barMar = document.getElementById("bar-mar");
-const valBlink = document.getElementById("val-blink");
-const barBlink = document.getElementById("bar-blink");
-const valGazeDown = document.getElementById("val-gaze-down");
-const barGazeDown = document.getElementById("bar-gaze-down");
-const valGazeUp = document.getElementById("val-gaze-up");
-const barGazeUp = document.getElementById("bar-gaze-up");
-const valGazeSide = document.getElementById("val-gaze-side");
-const barGazeSide = document.getElementById("bar-gaze-side");
+// Tracking lokal untuk summary yang lebih kaya
+let distractionLog = {};       // { alasan_terjemahan: count }
+let sessionStarted = false;    // Apakah sesi sudah pernah jalan
+let sessionDurationSec = 25 * 60;
 
-// ML Elements
-const mlBadge = document.getElementById("ml-badge");
-const focusScoreVal = document.getElementById("focus-score-val");
-const focusCircle = document.querySelector(".focus-circle");
-const decisionText = document.getElementById("decision-text");
-const riskProbText = document.getElementById("risk-prob-text");
-const reasonText = document.getElementById("reason-text");
-const riskProgressBar = document.getElementById("risk-progress-bar");
-const overlayLabel = document.getElementById("overlay-label");
+// Deteksi mode sebelumnya untuk auto-summary
+let _prevMode    = null;
+let _prevRunning = false;
 
-// Pomodoro Elements
-const timerDisplay = document.getElementById("timer-display");
-const pomodoroModeBadge = document.getElementById("pomodoro-mode-badge");
-const completedSessionsCount = document.getElementById("completed-sessions-count");
-const btnStart = document.getElementById("btn-start");
-const btnPause = document.getElementById("btn-pause");
-const btnResume = document.getElementById("btn-resume");
+// Timer ring circumference (r=52): 2*PI*52 ≈ 326.7
+const RING_CIRC = 326.7;
 
-// Stats Elements
-const statFocusTime = document.getElementById("stat-focus-time");
-const statUnfocusTime = document.getElementById("stat-unfocus-time");
-const statDistractionCount = document.getElementById("stat-distraction-count");
-const statYawnCount = document.getElementById("stat-yawn-count");
+// ---------------------------------------------------------------------------
+// VIEW MANAGEMENT
+// ---------------------------------------------------------------------------
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const target = document.getElementById('view-' + name);
+  if (target) target.classList.add('active');
 
-// Intervention Elements
-const interventionBanner = document.getElementById("intervention-banner");
-const alertIcon = document.getElementById("alert-icon");
-const alertTitle = document.getElementById("alert-title");
-const alertMessage = document.getElementById("alert-message");
-const btnAcceptBreak = document.getElementById("btn-accept-break");
+  if (name === 'history')   fetchHistory();
+  if (name === 'dashboard') fetchConfig();
 
-// --------------------------------------------------------------------------
-// WEBSOCKET TELEMETRY CLIENT
-// --------------------------------------------------------------------------
+  window._currentView = name;
+}
+
+function historyBack() {
+  showView(sessionStarted ? 'dashboard' : 'welcome');
+}
+
+// ---------------------------------------------------------------------------
+// WEBSOCKET
+// ---------------------------------------------------------------------------
 function initWebSocket() {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-  if (connText) connText.textContent = "Menghubungkan...";
-
+  setConnStatus('connecting');
   ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
-    if (connText) connText.textContent = "Live Telemetry Connected";
-    if (statusDot) {
-      statusDot.classList.remove("pulsing");
-      statusDot.classList.add("connected");
-    }
-    if (reconnectTimer) {
-      clearInterval(reconnectTimer);
-      reconnectTimer = null;
-    }
+    setConnStatus('live');
+    if (wsReconnectTimer) { clearInterval(wsReconnectTimer); wsReconnectTimer = null; }
   };
 
   ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      updateDashboard(data);
-    } catch (e) {
-      console.error("Error parsing telemetry:", e);
-    }
+    try { handleTelemetry(JSON.parse(event.data)); }
+    catch (e) { console.warn('[WS] Parse error:', e); }
   };
 
   ws.onclose = () => {
-    if (connText) connText.textContent = "Terputus. Mencoba reconnect...";
-    if (statusDot) {
-      statusDot.classList.remove("connected");
-      statusDot.classList.add("pulsing");
-    }
-    if (!reconnectTimer) {
-      reconnectTimer = setInterval(initWebSocket, 2000);
-    }
+    setConnStatus('error');
+    if (!wsReconnectTimer) wsReconnectTimer = setInterval(initWebSocket, 3000);
   };
 
-  ws.onerror = (err) => {
-    console.warn("WebSocket Error:", err);
-    ws.close();
-  };
+  ws.onerror = () => ws.close();
 }
 
-// --------------------------------------------------------------------------
-// DASHBOARD UI UPDATE
-// --------------------------------------------------------------------------
-function updateDashboard(data) {
+function setConnStatus(state) {
+  const labels = { connecting: 'Menghubungkan sistem...', live: 'Sistem terhubung', error: 'Koneksi terputus' };
+  ['welcome-dot', 'dash-dot'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.className = 'conn-dot ' + state;
+  });
+  ['welcome-conn-text', 'dash-conn-text'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = labels[state] || '';
+  });
+}
+
+// ---------------------------------------------------------------------------
+// TELEMETRY — PUSAT PENGOLAHAN DATA
+// ---------------------------------------------------------------------------
+function handleTelemetry(data) {
   const pred = data.prediction;
   const pomo = data.pomodoro;
 
-  if (pred) {
-    const tele = pred.telemetry || {};
+  // Simpan snapshot terkini
+  if (pred) lastPredData = pred;
+  if (pomo) lastPomoData = pomo;
 
-    // 1. Raw Telemetry dengan Normalisasi & Color Coding Cerdas
-    const yawVal = tele.yaw || 0.0;
-    const pitchVal = tele.pitch || 0.0;
-    const rollVal = tele.roll || 0.0;
-    const earVal = tele.ear || 0.0;
-    const marVal = tele.mar || 0.0;
-    const blinkVal = tele.blink_score || 0.0;
-    const gazeDownVal = tele.gaze_down || 0.0;
-    const gazeUpVal = tele.gaze_up || 0.0;
-    const gazeSideVal = tele.gaze_side || 0.0;
-
-    if (valYaw) valYaw.textContent = `${yawVal.toFixed(1)}°`;
-    if (barYaw) {
-      barYaw.style.width = `${Math.min(100, (Math.abs(yawVal) / 25.0) * 100)}%`;
-      barYaw.style.background = Math.abs(yawVal) > 18.0 ? "var(--accent-red)" : "var(--accent-cyan)";
-    }
-
-    if (valPitch) valPitch.textContent = `${pitchVal.toFixed(1)}°`;
-    if (barPitch) {
-      barPitch.style.width = `${Math.min(100, (Math.abs(pitchVal) / 25.0) * 100)}%`;
-      barPitch.style.background = (pitchVal < -15.0 || pitchVal > 15.0) ? "var(--accent-red)" : "var(--accent-cyan)";
-    }
-
-    if (valRoll) valRoll.textContent = `${rollVal.toFixed(1)}°`;
-    if (barRoll) {
-      barRoll.style.width = `${Math.min(100, (Math.abs(rollVal) / 20.0) * 100)}%`;
-    }
-
-    // EAR: Normalnya 0.25 - 0.35 (Mata Terbuka). Sayu/Tidur jika < 0.22
-    if (valEar) valEar.textContent = `${earVal.toFixed(3)}`;
-    if (barEar) {
-      const earOpenPct = Math.min(100, Math.max(0, (earVal / 0.35) * 100));
-      barEar.style.width = `${earOpenPct}%`;
-      barEar.style.background = earVal < 0.22 ? "var(--accent-red)" : "var(--accent-green)";
-    }
-
-    // MAR: Normalnya < 0.15 (Mulut Tertutup). Menguap jika > 0.45
-    if (valMar) valMar.textContent = `${marVal.toFixed(3)}`;
-    if (barMar) {
-      const marOpenPct = Math.min(100, Math.max(0, (marVal / 0.50) * 100));
-      barMar.style.width = `${marOpenPct}%`;
-      barMar.style.background = marVal > 0.45 ? "var(--accent-red)" : "var(--accent-cyan)";
-    }
-
-    if (valBlink) valBlink.textContent = `${blinkVal.toFixed(2)}`;
-    if (barBlink) {
-      barBlink.style.width = `${Math.min(100, blinkVal * 100)}%`;
-      barBlink.style.background = blinkVal > 0.55 ? "var(--accent-red)" : "var(--accent-cyan)";
-    }
-
-    if (valGazeDown) valGazeDown.textContent = `${gazeDownVal.toFixed(2)}`;
-    if (barGazeDown) {
-      barGazeDown.style.width = `${Math.min(100, gazeDownVal * 100)}%`;
-      barGazeDown.style.background = gazeDownVal > 0.40 ? "var(--accent-red)" : "var(--accent-cyan)";
-    }
-
-    if (valGazeUp) valGazeUp.textContent = `${gazeUpVal.toFixed(2)}`;
-    if (barGazeUp) {
-      barGazeUp.style.width = `${Math.min(100, gazeUpVal * 100)}%`;
-      barGazeUp.style.background = gazeUpVal > 0.35 ? "var(--accent-yellow)" : "var(--accent-cyan)";
-    }
-
-    if (valGazeSide) valGazeSide.textContent = `${gazeSideVal.toFixed(2)}`;
-    if (barGazeSide) {
-      barGazeSide.style.width = `${Math.min(100, gazeSideVal * 100)}%`;
-      barGazeSide.style.background = gazeSideVal > 0.45 ? "var(--accent-red)" : "var(--accent-cyan)";
-    }
-
-    // 2. ML Prediction Status & Face Presence Handling
-    const faceDetected = tele.face_detected === true;
-    const isStandby = pred.label === -1 || !faceDetected && pred.label === -1;
-    const isAbsent = !faceDetected && pred.label === 1;
-    const isFocused = faceDetected && pred.label === 0;
-    const focusScore = pred.focus_score || 0;
-    const pRisk = (pred.p_risk || 0) * 100;
-
-    if (reasonText) reasonText.textContent = tele.reason || "Normal";
-
-    if (isStandby) {
-      if (focusScoreVal) focusScoreVal.textContent = "--";
-      if (decisionText) decisionText.textContent = "Menunggu Wajah...";
-      if (riskProbText) riskProbText.textContent = "--";
-      if (riskProgressBar) riskProgressBar.style.width = "0%";
-      if (mlBadge) {
-        mlBadge.className = "badge badge-idle";
-        mlBadge.textContent = "STANDBY";
-      }
-      if (focusCircle) focusCircle.className = "focus-circle idle";
-    } else if (isAbsent) {
-      if (focusScoreVal) focusScoreVal.textContent = "0%";
-      if (decisionText) decisionText.textContent = "Tidak Ada Siswa (1)";
-      if (riskProbText) riskProbText.textContent = "100.0%";
-      if (riskProgressBar) riskProgressBar.style.width = "100%";
-      if (mlBadge) {
-        mlBadge.className = "badge badge-danger";
-        mlBadge.textContent = "TIDAK TERDETEKSI";
-      }
-      if (focusCircle) focusCircle.className = "focus-circle danger";
-    } else {
-      if (focusScoreVal) focusScoreVal.textContent = `${focusScore.toFixed(0)}%`;
-      if (decisionText) decisionText.textContent = isFocused ? "Risiko Rendah (0)" : "Risiko Tinggi (1)";
-      if (riskProbText) riskProbText.textContent = `${pRisk.toFixed(1)}%`;
-      if (riskProgressBar) riskProgressBar.style.width = `${Math.max(5, pRisk)}%`;
-
-      if (mlBadge) {
-        if (isFocused) {
-          mlBadge.className = "badge badge-success";
-          mlBadge.textContent = "FOKUS";
-          if (focusCircle) focusCircle.className = "focus-circle";
-        } else {
-          mlBadge.className = "badge badge-danger";
-          mlBadge.textContent = "TIDAK FOKUS";
-          if (focusCircle) focusCircle.className = "focus-circle danger";
-        }
-      }
-    }
-
-    if (overlayLabel) {
-      overlayLabel.textContent = `${pred.label_text || "Memproses..."} | ${tele.reason || ""}`;
-    }
-  }
-
-  // 3. Pomodoro Status & Controls
-  if (pomo) {
-    if (timerDisplay) timerDisplay.textContent = pomo.time_formatted || "25:00";
-    if (completedSessionsCount) completedSessionsCount.textContent = pomo.completed_sessions || 0;
-
-    if (pomodoroModeBadge) {
-      pomodoroModeBadge.textContent = pomo.mode;
-      if (pomo.mode === "STUDY") {
-        pomodoroModeBadge.className = "badge badge-success";
-      } else if (pomo.mode.includes("BREAK")) {
-        pomodoroModeBadge.className = "badge badge-live";
-      } else {
-        pomodoroModeBadge.className = "badge badge-idle";
-      }
-    }
-
-    // Tombol Toggle
-    if (pomo.is_running) {
-      if (btnStart) btnStart.classList.add("hidden");
-      if (btnPause) btnPause.classList.remove("hidden");
-      if (btnResume) btnResume.classList.add("hidden");
-    } else {
-      if (pomo.mode === "IDLE") {
-        if (btnStart) btnStart.classList.remove("hidden");
-        if (btnPause) btnPause.classList.add("hidden");
-        if (btnResume) btnResume.classList.add("hidden");
-      } else {
-        if (btnStart) btnStart.classList.add("hidden");
-        if (btnPause) btnPause.classList.add("hidden");
-        if (btnResume) btnResume.classList.remove("hidden");
-      }
-    }
-
-    // Stats
-    if (statFocusTime) statFocusTime.textContent = formatDuration(pomo.total_focus_sec || 0);
-    if (statUnfocusTime) statUnfocusTime.textContent = formatDuration(pomo.total_unfocused_sec || 0);
-    if (statDistractionCount) statDistractionCount.textContent = pomo.distraction_count || 0;
-    if (statYawnCount) statYawnCount.textContent = pomo.yawn_count || 0;
-
-    // 4. Adaptive Intervention Banner
-    if (pomo.active_alert) {
-      if (interventionBanner) interventionBanner.classList.remove("hidden");
-      if (alertMessage) alertMessage.textContent = pomo.active_alert;
-      if (btnAcceptBreak) {
-        if (pomo.suggested_break) {
-          btnAcceptBreak.classList.remove("hidden");
-        } else {
-          btnAcceptBreak.classList.add("hidden");
-        }
-      }
-    } else {
-      if (interventionBanner) interventionBanner.classList.add("hidden");
+  if (pred) updateCVPanel(pred);
+  if (pomo && pred) {
+    updateTimerPanel(pomo);
+    updateFocusBar(pred, pomo);
+    updateInterventionBanner(pomo);
+    detectAutoSummary(pomo);
+    if (pomo.mode === 'STUDY' && pomo.is_running) {
+      collectDistractionData(pred);
     }
   }
 }
 
-function formatDuration(totalSeconds) {
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = totalSeconds % 60;
-  if (mins === 0) return `${secs}s`;
-  return `${mins}m ${secs}s`;
+// ---------------------------------------------------------------------------
+// CV INDICATORS
+// ---------------------------------------------------------------------------
+function updateCVPanel(pred) {
+  const t = pred.telemetry || {};
+  setMetric('val-yaw',       `${(t.yaw||0).toFixed(1)}°`,   'bar-yaw',       Math.min(100,(Math.abs(t.yaw||0)/25)*100),       Math.abs(t.yaw||0)>18);
+  setMetric('val-pitch',     `${(t.pitch||0).toFixed(1)}°`, 'bar-pitch',     Math.min(100,(Math.abs(t.pitch||0)/25)*100),     (t.pitch||0)<-15||(t.pitch||0)>12);
+  setMetric('val-roll',      `${(t.roll||0).toFixed(1)}°`,  'bar-roll',      Math.min(100,(Math.abs(t.roll||0)/20)*100),      false);
+  setMetric('val-ear',       (t.ear||0).toFixed(3),          'bar-ear',       Math.min(100,((t.ear||0)/0.35)*100),             (t.ear||0)<0.22);
+  setMetric('val-mar',       (t.mar||0).toFixed(3),          'bar-mar',       Math.min(100,((t.mar||0)/0.50)*100),             (t.mar||0)>0.45);
+  setMetric('val-blink',     (t.blink_score||0).toFixed(2),  'bar-blink',     Math.min(100,(t.blink_score||0)*100),            (t.blink_score||0)>0.55);
+  setMetric('val-gaze-down', (t.gaze_down||0).toFixed(2),    'bar-gaze-down', Math.min(100,(t.gaze_down||0)*100),              (t.gaze_down||0)>0.40);
+  setMetric('val-gaze-up',   (t.gaze_up||0).toFixed(2),      'bar-gaze-up',   Math.min(100,(t.gaze_up||0)*100),                (t.gaze_up||0)>0.35);
+  setMetric('val-gaze-side', (t.gaze_side||0).toFixed(2),    'bar-gaze-side', Math.min(100,(t.gaze_side||0)*100),              (t.gaze_side||0)>0.45);
+
+  setText('overlay-label', `${pred.label_text || 'Memproses...'} — ${t.reason || ''}`);
 }
 
-// --------------------------------------------------------------------------
-// REST API CALLS
-// --------------------------------------------------------------------------
-async function postAPI(endpoint, body = {}) {
+function setMetric(valId, valText, barId, pct, isDanger) {
+  setText(valId, valText);
+  const bar = document.getElementById(barId);
+  if (!bar) return;
+  bar.style.width = `${Math.max(0, pct)}%`;
+  bar.style.background = isDanger ? 'var(--red)' : 'var(--green)';
+}
+
+// ---------------------------------------------------------------------------
+// FOCUS BAR
+// ---------------------------------------------------------------------------
+function updateFocusBar(pred, pomo) {
+  const t = pred.telemetry || {};
+  const faceOk  = t.face_detected === true;
+  const focused = faceOk && pred.label === 0;
+  const standby = pred.label === -1 || !faceOk;
+  const score   = pred.focus_score || 0;
+  const pRisk   = (pred.p_risk || 0) * 100;
+
+  const fill     = document.getElementById('focus-bar-fill');
+  const camChip  = document.getElementById('camera-status-chip');
+  const chipText = document.getElementById('camera-status-text');
+
+  if (standby) {
+    setText('focus-decision', '—');
+    if (fill) { fill.style.width = '0%'; fill.className = 'focus-bar-fill'; }
+    setText('focus-risk-text', 'Menunggu deteksi wajah...');
+    if (camChip) camChip.className = 'status-chip status-idle';
+    if (chipText) chipText.textContent = 'Siap';
+    return;
+  }
+
+  if (fill) {
+    fill.style.width = `${Math.max(3, score)}%`;
+    fill.className = 'focus-bar-fill' + (focused ? '' : ' danger');
+  }
+  setText('focus-decision', focused ? 'Fokus' : 'Tidak fokus');
+  setText('focus-risk-text', `Risiko gangguan: ${pRisk.toFixed(1)}% — ${t.reason || 'Normal'}`);
+  if (camChip) camChip.className = 'status-chip ' + (focused ? 'status-focus' : 'status-unfocus');
+  if (chipText) chipText.textContent = focused ? 'Fokus' : 'Tidak fokus';
+}
+
+// ---------------------------------------------------------------------------
+// TIMER PANEL
+// ---------------------------------------------------------------------------
+function updateTimerPanel(pomo) {
+  setText('timer-display', pomo.time_formatted || '00:00');
+  setText('completed-sessions', pomo.completed_sessions || 0);
+
+  // Mode chip & label
+  const modeMap = {
+    STUDY:      { label: 'Sesi belajar',      cls: 'mode-chip study',  timerLabel: 'belajar' },
+    BREAK:      { label: 'Istirahat',          cls: 'mode-chip break',  timerLabel: 'istirahat' },
+    LONG_BREAK: { label: 'Istirahat panjang',  cls: 'mode-chip break',  timerLabel: 'istirahat panjang' },
+    PAUSED:     { label: 'Dijeda',             cls: 'mode-chip paused', timerLabel: 'dijeda' },
+    IDLE:       { label: 'Siap',               cls: 'mode-chip',        timerLabel: 'siap' },
+  };
+  const m = modeMap[pomo.mode] || { label: pomo.mode, cls: 'mode-chip', timerLabel: pomo.mode.toLowerCase() };
+  const modeChip = document.getElementById('mode-chip');
+  if (modeChip) { document.getElementById('mode-label').textContent = m.label; modeChip.className = m.cls; }
+  setText('timer-mode-label', m.timerLabel);
+
+  // Timer ring progress
+  updateTimerRing(pomo);
+
+  // Kontrol tombol
+  const btnStart  = document.getElementById('btn-start');
+  const btnPause  = document.getElementById('btn-pause');
+  const btnResume = document.getElementById('btn-resume');
+  const btnSkip   = document.getElementById('btn-skip');
+  const btnStop   = document.getElementById('btn-stop');
+
+  if (pomo.mode === 'IDLE') {
+    show(btnStart); hide(btnPause); hide(btnResume); hide(btnSkip); hide(btnStop);
+    sessionStarted = false;
+  } else if (pomo.is_running) {
+    hide(btnStart); show(btnPause); hide(btnResume); show(btnSkip); show(btnStop);
+    sessionStarted = true;
+  } else {
+    // Paused
+    hide(btnStart); hide(btnPause); show(btnResume); show(btnSkip); show(btnStop);
+  }
+
+  // Mini stats
+  setText('stat-focus-pct', pomo.focus_percentage != null ? `${pomo.focus_percentage.toFixed(0)}%` : '—');
+  setText('stat-distract', pomo.distraction_count || 0);
+  setText('stat-yawn', pomo.yawn_count || 0);
+
+  _prevMode    = pomo.mode;
+  _prevRunning = pomo.is_running;
+}
+
+function updateTimerRing(pomo) {
+  const ring = document.getElementById('ring-fill');
+  if (!ring) return;
+
+  let totalSec = sessionDurationSec;
+  if (pomo.mode === 'BREAK')      totalSec = (document.getElementById('cfg-break')?.value || 5) * 60;
+  if (pomo.mode === 'LONG_BREAK') totalSec = (document.getElementById('cfg-longbreak')?.value || 15) * 60;
+
+  const remaining = pomo.time_remaining || totalSec;
+  const fraction  = Math.max(0, Math.min(1, remaining / totalSec));
+  ring.style.strokeDashoffset = RING_CIRC * (1 - fraction);
+
+  const urgent = pomo.mode === 'STUDY' && remaining < 60;
+  ring.className = 'ring-fill' + (urgent ? ' danger' : pomo.mode.includes('BREAK') ? ' break' : '');
+}
+
+// ---------------------------------------------------------------------------
+// INTERVENTION BANNER
+// ---------------------------------------------------------------------------
+function updateInterventionBanner(pomo) {
+  const banner   = document.getElementById('intervention-banner');
+  const msgEl    = document.getElementById('alert-message');
+  const btnBreak = document.getElementById('btn-accept-break');
+  if (!banner) return;
+
+  if (pomo.active_alert) {
+    const msg = pomo.active_alert.replace(/^\[.*?\]\s*/, '');
+    banner.classList.remove('hidden');
+    if (msgEl) msgEl.textContent = msg;
+    if (btnBreak) pomo.suggested_break ? btnBreak.classList.remove('hidden') : btnBreak.classList.add('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AUTO-SUMMARY: deteksi transisi STUDY→BREAK otomatis dari server
+// ---------------------------------------------------------------------------
+function detectAutoSummary(pomo) {
+  const wasStudyRunning = _prevMode === 'STUDY' && _prevRunning;
+  const nowBreak = pomo.mode === 'BREAK' || pomo.mode === 'LONG_BREAK';
+  const modeChanged = pomo.mode !== _prevMode;
+
+  if (wasStudyRunning && nowBreak && modeChanged) {
+    buildAndShowSummary(pomo, 'Sesi belajar selesai');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// STOP SESSION MANUAL — ambil snapshot stats saat ini, reset, tampilkan summary
+// ---------------------------------------------------------------------------
+async function stopSessionNow() {
+  // Ambil snapshot data terakhir SEBELUM reset
+  const snapPomo = lastPomoData ? { ...lastPomoData } : null;
+  const snapLog  = { ...distractionLog };
+
+  if (!snapPomo || (snapPomo.total_focus_sec === 0 && snapPomo.total_unfocused_sec === 0)) {
+    // Sesi belum sempat mulai, cukup reset saja
+    await postAPI('/api/pomodoro/reset');
+    return;
+  }
+
+  // Reset sesi di server (ini juga auto-save ke DB)
+  await postAPI('/api/pomodoro/skip');
+
+  // Tampilkan summary dari snapshot
+  buildAndShowSummary(snapPomo, 'Sesi dihentikan lebih awal', snapLog);
+  setTimeout(fetchHistory, 600);
+}
+
+// ---------------------------------------------------------------------------
+// BUILD & SHOW SUMMARY
+// ---------------------------------------------------------------------------
+function buildAndShowSummary(pomo, label, customLog) {
+  const log = customLog || distractionLog;
+
+  // Stats utama
+  const focusPct   = pomo.focus_percentage ?? 0;
+  const focusSec   = pomo.total_focus_sec ?? 0;
+  const unfocusSec = pomo.total_unfocused_sec ?? 0;
+  const totalSec   = focusSec + unfocusSec;
+
+  setText('summary-type-label', label);
+  setText('sum-focus-pct',   totalSec > 0 ? `${focusPct.toFixed(0)}%` : '—');
+  setText('sum-focus-dur',   formatDuration(focusSec));
+  setText('sum-unfocus-dur', formatDuration(unfocusSec));
+  setText('sum-total-dur',   formatDuration(totalSec));
+  setText('sum-distract',    pomo.distraction_count || 0);
+  setText('sum-yawn',        pomo.yawn_count || 0);
+  setText('sum-sleep',       pomo.sleep_count || 0);
+
+  // Breakdown penyebab gangguan
+  const breakdownEl = document.getElementById('breakdown-content');
+  if (breakdownEl) {
+    const entries = Object.entries(log).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const total   = entries.reduce((s, [, v]) => s + v, 0);
+
+    if (entries.length === 0) {
+      breakdownEl.innerHTML = `<p style="font-size:12px;color:var(--txt-3);padding:6px 0">Tidak ada gangguan yang tercatat.</p>`;
+    } else {
+      breakdownEl.innerHTML = entries.map(([reason, count]) => {
+        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+        return `
+          <div class="breakdown-item">
+            <span>${reason}</span>
+            <div style="display:flex;align-items:center;gap:10px">
+              <div class="breakdown-bar" style="width:80px">
+                <div class="breakdown-bar-fill" style="width:${pct}%"></div>
+              </div>
+              <span class="breakdown-val">${count}×</span>
+            </div>
+          </div>`;
+      }).join('');
+    }
+  }
+
+  // Insight singkat berdasarkan data
+  const insightEl = document.getElementById('summary-insight');
+  if (insightEl) {
+    insightEl.innerHTML = buildInsight(focusPct, focusSec, unfocusSec, pomo, log);
+  }
+
+  // Reset log untuk sesi berikutnya
+  distractionLog = {};
+
+  // Tampilkan overlay
+  const overlay = document.getElementById('summary-overlay');
+  if (overlay) overlay.classList.remove('hidden');
+}
+
+function buildInsight(focusPct, focusSec, unfocusSec, pomo, log) {
+  const parts = [];
+
+  // Kondisi fokus keseluruhan
+  if (focusSec + unfocusSec === 0) {
+    return '<strong>Sesi tidak sempat merekam data.</strong>';
+  }
+
+  const focusMin = Math.round(focusSec / 60);
+  const unfocusMin = Math.round(unfocusSec / 60);
+
+  if (focusPct >= 80) {
+    parts.push(`Konsentrasimu sangat baik — <strong>${focusMin} menit</strong> dari sesi dihabiskan dalam keadaan fokus.`);
+  } else if (focusPct >= 50) {
+    parts.push(`Kamu fokus selama <strong>${focusMin} menit</strong>, terganggu selama <strong>${unfocusMin} menit</strong>.`);
+  } else {
+    parts.push(`Fokusmu hanya <strong>${focusMin} menit</strong>. Perlu strategi lebih untuk menjaga perhatian.`);
+  }
+
+  // Penyebab utama gangguan
+  const top = Object.entries(log).sort((a, b) => b[1] - a[1])[0];
+  if (top && top[1] > 0) {
+    parts.push(`Gangguan terbanyak: <strong>${top[0]}</strong>.`);
+  }
+
+  // Kantuk/menguap
+  if ((pomo.yawn_count || 0) >= 3) {
+    parts.push(`Kamu menguap ${pomo.yawn_count} kali — pertimbangkan tidur cukup sebelum belajar.`);
+  }
+
+  return parts.join(' ');
+}
+
+function closeSummary() {
+  const overlay = document.getElementById('summary-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function startFromSummary() {
+  closeSummary();
+  // Mode sudah berpindah di server (misal ke BREAK setelah STUDY selesai)
+  // Jika dari stop manual (IDLE), mulai sesi baru
+  if (!lastPomoData || lastPomoData.mode === 'IDLE') {
+    postAPI('/api/pomodoro/start?mode=STUDY');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DISTRACTION LOG
+// ---------------------------------------------------------------------------
+function collectDistractionData(pred) {
+  const t = pred.telemetry || {};
+  if (t.face_detected && pred.label === 0) return; // sedang fokus, tidak perlu log
+  if (t.reason && t.reason !== 'Normal') {
+    const key = translateReason(t.reason);
+    distractionLog[key] = (distractionLog[key] || 0) + 1;
+  }
+}
+
+function translateReason(r) {
+  const map = {
+    'Looking Away (Yaw)':     'Menoleh ke samping',
+    'Looking Down (Pitch)':   'Menunduk',
+    'Gaze Down (Phone/Desk)': 'Lihat HP / meja',
+    'Gaze Up (Daydreaming)':  'Melamun ke atas',
+    'Gaze Side':              'Melirik samping',
+    'Sleeping/Drowsy':        'Mengantuk / tertidur',
+    'Yawning':                'Menguap',
+    'No Face Detected':       'Keluar dari kamera',
+  };
+  return map[r] || r;
+}
+
+// ---------------------------------------------------------------------------
+// REST API
+// ---------------------------------------------------------------------------
+async function postAPI(endpoint, body = null) {
   try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    const opts = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+    if (body !== null) opts.body = JSON.stringify(body);
+    const res = await fetch(endpoint, opts);
     return await res.json();
-  } catch (err) {
-    console.error("API error:", err);
-  }
+  } catch (err) { console.warn('[API]', endpoint, err); }
 }
 
-function startPomodoro(mode = "STUDY") {
+async function getAPI(endpoint) {
+  try {
+    const res = await fetch(endpoint);
+    return await res.json();
+  } catch (err) { console.warn('[API]', endpoint, err); }
+}
+
+// --- POMODORO CONTROLS ---
+function startPomodoro(mode = 'STUDY') {
+  distractionLog = {};
+  sessionStarted = true;
   postAPI(`/api/pomodoro/start?mode=${mode}`);
 }
 
-function pausePomodoro() {
-  postAPI("/api/pomodoro/pause");
-}
-
-function resumePomodoro() {
-  postAPI("/api/pomodoro/resume");
-}
-
-function resetPomodoro() {
-  postAPI("/api/pomodoro/reset");
-}
+function pausePomodoro()  { postAPI('/api/pomodoro/pause'); }
+function resumePomodoro() { postAPI('/api/pomodoro/resume'); }
 
 function skipPomodoro() {
-  postAPI("/api/pomodoro/skip");
-  setTimeout(fetchHistory, 500);
+  // Lewati ke sesi berikutnya — auto-summary akan ditangani oleh detectAutoSummary
+  postAPI('/api/pomodoro/skip').then(() => setTimeout(fetchHistory, 800));
 }
 
-function acceptSuggestedBreak() {
-  postAPI("/api/pomodoro/accept_break");
+function acceptSuggestedBreak() { postAPI('/api/pomodoro/accept_break'); }
+function dismissAlert()          { postAPI('/api/pomodoro/dismiss_alert'); }
+
+// ---------------------------------------------------------------------------
+// CONFIG PANEL
+// ---------------------------------------------------------------------------
+function toggleConfig() {
+  const panel = document.getElementById('config-panel');
+  if (!panel) return;
+  panel.classList.toggle('open');
 }
 
-function dismissAlert() {
-  postAPI("/api/pomodoro/dismiss_alert");
-  if (interventionBanner) interventionBanner.classList.add("hidden");
+function applyTemplate(study, brk, longBrk, tplId) {
+  document.getElementById('cfg-study').value     = study;
+  document.getElementById('cfg-break').value     = brk;
+  document.getElementById('cfg-longbreak').value = longBrk;
+  document.querySelectorAll('.tpl-btn').forEach(b => b.classList.remove('active'));
+  const el = document.getElementById(tplId);
+  if (el) el.classList.add('active');
 }
 
+async function saveConfig() {
+  const study    = parseInt(document.getElementById('cfg-study').value)    || 25;
+  const brk      = parseInt(document.getElementById('cfg-break').value)    || 5;
+  const longBrk  = parseInt(document.getElementById('cfg-longbreak').value)|| 15;
+  const interval = parseFloat(document.getElementById('cfg-interval').value)|| 1.0;
+
+  await postAPI('/api/pomodoro/configure', {
+    study_minutes: study, break_minutes: brk, long_break_minutes: longBrk
+  });
+  await postAPI('/api/config', { telemetry_interval_sec: interval });
+
+  sessionDurationSec = study * 60;
+  toggleConfig();
+}
+
+async function fetchConfig() {
+  const cfg = await getAPI('/api/config');
+  if (!cfg) return;
+  const s = document.getElementById('cfg-study');
+  const b = document.getElementById('cfg-break');
+  const l = document.getElementById('cfg-longbreak');
+  const i = document.getElementById('cfg-interval');
+  if (s) s.value = cfg.study_minutes    || 25;
+  if (b) b.value = cfg.break_minutes    || 5;
+  if (l) l.value = cfg.long_break_minutes || 15;
+  if (i) i.value = cfg.telemetry_interval_sec || 1;
+  sessionDurationSec = (cfg.study_minutes || 25) * 60;
+}
+
+// ---------------------------------------------------------------------------
+// HISTORY
+// ---------------------------------------------------------------------------
 async function fetchHistory() {
-  try {
-    const res = await fetch("/api/history");
-    const data = await res.json();
-    const history = data.history || [];
-    const tbody = document.getElementById("history-table-body");
+  const data = await getAPI('/api/history?limit=30');
+  if (!data) return;
+  const tbody = document.getElementById('history-table-body');
+  if (!tbody) return;
 
-    if (!tbody) return;
+  const history = data.history || [];
+  if (history.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Belum ada sesi yang tersimpan.</td></tr>';
+    return;
+  }
 
-    if (history.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center">Belum ada riwayat sesi yang tersimpan.</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = history.map(item => `
+  tbody.innerHTML = history.map(item => {
+    const cls = item.focus_percentage >= 70 ? 'good' : 'bad';
+    return `
       <tr>
         <td>${item.timestamp}</td>
-        <td><strong>${item.session_type}</strong></td>
+        <td><strong>${translateSessionType(item.session_type)}</strong></td>
         <td>${formatDuration(item.duration_sec)}</td>
-        <td><span class="badge ${item.focus_percentage >= 80 ? 'badge-success' : 'badge-danger'}">${item.focus_percentage}%</span></td>
+        <td><span class="focus-tag ${cls}">${item.focus_percentage}%</span></td>
         <td>${item.distraction_count}</td>
         <td>${item.yawn_count}</td>
-        <td><small>${item.notes || '-'}</small></td>
-      </tr>
-    `).join("");
-  } catch (e) {
-    console.error("Error fetching history:", e);
-  }
+        <td style="color:var(--txt-3);font-size:12px">${item.notes || '—'}</td>
+      </tr>`;
+  }).join('');
 }
 
-// Inisialisasi saat window dimuat
-window.addEventListener("DOMContentLoaded", () => {
+function translateSessionType(type) {
+  if (!type) return '—';
+  if (type.includes('ADAPTIVE')) return 'Belajar (jeda adaptif)';
+  if (type.includes('STUDY'))    return 'Belajar';
+  if (type.includes('LONG_BREAK')) return 'Istirahat panjang';
+  if (type.includes('BREAK'))    return 'Istirahat';
+  return type;
+}
+
+// ---------------------------------------------------------------------------
+// UTIL
+// ---------------------------------------------------------------------------
+function formatDuration(totalSeconds) {
+  const s = parseInt(totalSeconds) || 0;
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  if (s === 0) return '0d';
+  if (m === 0) return `${sec}d`;
+  if (sec === 0) return `${m}m`;
+  return `${m}m ${sec}d`;
+}
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function show(el) { if (el) el.classList.remove('hidden'); }
+function hide(el) { if (el) el.classList.add('hidden'); }
+
+// ---------------------------------------------------------------------------
+// INIT
+// ---------------------------------------------------------------------------
+window.addEventListener('DOMContentLoaded', () => {
+  showView('welcome');
   initWebSocket();
-  fetchHistory();
 });

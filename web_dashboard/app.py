@@ -1,12 +1,19 @@
 """
 web_dashboard/app.py
-Backend Server FastAPI untuk Dashboard Pemantauan Atensi Siswa & Adaptive Pomodoro
+Backend Server FastAPI untuk Dashboard Pemantauan Atensi Siswa & Adaptive Pomodoro NARA Project.
 
 Menyediakan:
-1. Web Interface (HTML5, Vanilla CSS, JS HUD)
+1. Web Interface (HTML5, Vanilla CSS, JS)
 2. Live MJPEG Video Stream (/video_feed) dengan Real-time Computer Vision Overlay
 3. WebSocket Telemetry (/ws) untuk update instan metrik ML (SVM), EAR, MAR, Gaze, dan Timer Pomodoro
 4. REST API untuk kontrol Pomodoro (/api/pomodoro/...) & riwayat sesi SQLite
+5. REST API untuk konfigurasi pomodoro (/api/config) & env settings
+
+Environment Variables:
+  CAMERA_SOURCE          : "0" untuk webcam bawaan, atau URL stream ESP32-CAM
+  TELEMETRY_INTERVAL_SEC : Interval update telemetry ke WebSocket (default: 1.0 detik)
+                           Contoh: set TELEMETRY_INTERVAL_SEC=3  -> update setiap 3 detik
+                                   set TELEMETRY_INTERVAL_SEC=0.5 -> update setiap 0.5 detik
 """
 
 import asyncio
@@ -46,6 +53,7 @@ os.makedirs(TEMPLATES_DIR, exist_ok=True)
 # - "0" : Webcam Laptop Bawaan
 # - URL Stream : ESP32-CAM (Contoh: "http://192.168.1.100:81/stream" atau "rtsp://...")
 DEFAULT_CAMERA_SOURCE = os.getenv("CAMERA_SOURCE", "0")
+TELEMETRY_INTERVAL_SEC = float(os.getenv("TELEMETRY_INTERVAL_SEC", "1.0"))
 
 # Shared Global State
 video_source = None
@@ -53,13 +61,17 @@ predictor = None
 pomodoro = None
 connected_websockets: List[WebSocket] = []
 current_frame_bytes = None
+# Telemetry interval dapat diubah saat runtime via POST /api/config
+_telemetry_interval = TELEMETRY_INTERVAL_SEC
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global video_source, predictor, pomodoro
+    global video_source, predictor, pomodoro, _telemetry_interval
     source = os.getenv("CAMERA_SOURCE", DEFAULT_CAMERA_SOURCE)
+    _telemetry_interval = float(os.getenv("TELEMETRY_INTERVAL_SEC", "1.0"))
     print(f"[STARTUP] Menginisialisasi Video Source [{source}], Focus Predictor & Pomodoro Service...")
+    print(f"[STARTUP] Telemetry interval: {_telemetry_interval}s")
     video_source = VideoSource(source)
     predictor = FocusPredictor()
     pomodoro = PomodoroService()
@@ -84,7 +96,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 async def video_processing_worker():
     """Background worker yang menangkap frame video, menjalankan ML, dan broadcast telemetry."""
-    global current_frame_bytes, video_source, predictor, pomodoro, connected_websockets
+    global current_frame_bytes, video_source, predictor, pomodoro, connected_websockets, _telemetry_interval
     last_telemetry_time = 0
 
     while True:
@@ -110,8 +122,8 @@ async def video_processing_worker():
             if ret:
                 current_frame_bytes = buffer.tobytes()
 
-            # Broadcast WebSocket Telemetry setiap ~100ms (10 FPS update rate untuk dashboard)
-            if now - last_telemetry_time >= 0.10:
+            # Broadcast WebSocket Telemetry sesuai interval yang dikonfigurasi via env/API
+            if now - last_telemetry_time >= _telemetry_interval:
                 last_telemetry_time = now
                 payload = {
                     "timestamp": now,
@@ -223,10 +235,86 @@ async def api_pomodoro_dismiss_alert():
     return JSONResponse(status)
 
 
+@app.post("/api/pomodoro/configure")
+async def api_pomodoro_configure(request: Request):
+    """
+    Konfigurasi durasi sesi Pomodoro secara dinamis.
+    Body JSON: { "study_minutes": 25, "break_minutes": 5, "long_break_minutes": 15 }
+    """
+    try:
+        body = await request.json()
+        study_min = int(body.get("study_minutes", 25))
+        break_min = int(body.get("break_minutes", 5))
+        long_break_min = int(body.get("long_break_minutes", 15))
+
+        # Validasi rentang aman
+        study_min = max(1, min(study_min, 120))
+        break_min = max(1, min(break_min, 60))
+        long_break_min = max(1, min(long_break_min, 120))
+
+        pomodoro.study_duration = study_min * 60
+        pomodoro.break_duration = break_min * 60
+        pomodoro.long_break_duration = long_break_min * 60
+
+        # Reset timer ke durasi baru jika sedang IDLE
+        if pomodoro.mode == "IDLE":
+            pomodoro.time_remaining = pomodoro.study_duration
+
+        return JSONResponse({
+            "ok": True,
+            "study_minutes": study_min,
+            "break_minutes": break_min,
+            "long_break_minutes": long_break_min
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+@app.get("/api/config")
+async def api_get_config():
+    """Mengambil konfigurasi sistem saat ini."""
+    return JSONResponse({
+        "camera_source": os.getenv("CAMERA_SOURCE", DEFAULT_CAMERA_SOURCE),
+        "telemetry_interval_sec": _telemetry_interval,
+        "study_minutes": pomodoro.study_duration // 60,
+        "break_minutes": pomodoro.break_duration // 60,
+        "long_break_minutes": pomodoro.long_break_duration // 60,
+    })
+
+
+@app.post("/api/config")
+async def api_set_config(request: Request):
+    """
+    Update konfigurasi sistem saat runtime.
+    Body JSON: { "telemetry_interval_sec": 1.0 }
+    """
+    global _telemetry_interval
+    try:
+        body = await request.json()
+        if "telemetry_interval_sec" in body:
+            interval = float(body["telemetry_interval_sec"])
+            _telemetry_interval = max(0.1, min(interval, 30.0))
+
+        return JSONResponse({
+            "ok": True,
+            "telemetry_interval_sec": _telemetry_interval
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
 @app.get("/api/history")
-async def api_history():
-    history = pomodoro.get_history(10)
+async def api_history(limit: int = 20):
+    """Mengambil riwayat sesi terakhir dari database."""
+    history = pomodoro.get_history(limit)
     return JSONResponse({"history": history})
+
+
+@app.get("/api/session/summary")
+async def api_session_summary():
+    """Mengambil ringkasan sesi aktif saat ini."""
+    status = pomodoro.get_status()
+    return JSONResponse(status)
 
 
 if __name__ == "__main__":
@@ -234,12 +322,12 @@ if __name__ == "__main__":
     import uvicorn
 
     parser = argparse.ArgumentParser(
-        description="Web Dashboard Student Focus Monitoring & Adaptive Pomodoro"
+        description="NARA Project — Web Dashboard Student Focus Monitoring & Adaptive Pomodoro"
     )
     parser.add_argument(
         "--source",
         default=DEFAULT_CAMERA_SOURCE,
-        help="Sumber video: '0' untuk webcam laptop, atau URL Stream ESP32-CAM (misal: 'http://192.168.1.100:81/stream')"
+        help="Sumber video: '0' untuk webcam laptop, atau URL Stream ESP32-CAM"
     )
     parser.add_argument(
         "--host",
@@ -252,13 +340,21 @@ if __name__ == "__main__":
         default=8000,
         help="Port web server (default: 8000)"
     )
+    parser.add_argument(
+        "--telemetry-interval",
+        type=float,
+        default=TELEMETRY_INTERVAL_SEC,
+        help="Interval update telemetry dalam detik (default: 1.0)"
+    )
     args = parser.parse_args()
 
     os.environ["CAMERA_SOURCE"] = str(args.source)
+    os.environ["TELEMETRY_INTERVAL_SEC"] = str(args.telemetry_interval)
 
     print("\n" + "=" * 70)
-    print("  [WEB] MENJALANKAN SMART STUDENT MONITORING & POMODORO DASHBOARD")
-    print(f"  Sumber Video : {args.source}")
-    print(f"  Buka browser : http://localhost:{args.port}")
+    print("  NARA PROJECT — STUDENT FOCUS MONITORING & POMODORO DASHBOARD")
+    print(f"  Sumber Video       : {args.source}")
+    print(f"  Telemetry Interval : {args.telemetry_interval}s")
+    print(f"  Buka browser       : http://localhost:{args.port}")
     print("=" * 70 + "\n")
     uvicorn.run(app, host=args.host, port=args.port)
