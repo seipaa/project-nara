@@ -21,7 +21,7 @@ import json
 import os
 import sys
 import time
-from typing import List
+from typing import List, Optional
 from contextlib import asynccontextmanager
 
 import cv2
@@ -194,8 +194,8 @@ async def websocket_endpoint(websocket: WebSocket):
 # REST API CONTROLLERS FOR POMODORO
 # ---------------------------------------------------------------------------
 @app.post("/api/pomodoro/start")
-async def api_pomodoro_start(mode: str = "STUDY"):
-    status = pomodoro.start(mode)
+async def api_pomodoro_start(mode: str = "STUDY", subject: Optional[str] = None):
+    status = pomodoro.start(mode, subject)
     return JSONResponse(status)
 
 

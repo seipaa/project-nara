@@ -99,9 +99,14 @@ class PomodoroService:
         conn.commit()
         conn.close()
 
-    def start(self, mode="STUDY"):
+    def start(self, mode="STUDY", subject=None):
         """Memulai timer Pomodoro."""
         self.mode = mode
+        if subject:
+            self.subject = subject
+        elif not hasattr(self, "subject") or not self.subject:
+            self.subject = "Belajar"
+
         if mode == "STUDY":
             self.time_remaining = self.study_duration
         elif mode == "BREAK":
@@ -274,6 +279,10 @@ class PomodoroService:
         total_time = self.total_focus_seconds + self.total_unfocused_seconds
         focus_pct = (self.total_focus_seconds / total_time * 100.0) if total_time > 0 else 100.0
 
+        saved_type = session_type
+        if "STUDY" in session_type:
+            saved_type = getattr(self, "subject", None) or "Belajar"
+
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -284,7 +293,7 @@ class PomodoroService:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                session_type,
+                saved_type,
                 int(total_time),
                 round(focus_pct, 1),
                 self.total_distraction_events,
