@@ -25,6 +25,7 @@ import argparse
 import math
 import os
 import sys
+import threading
 import time
 import urllib.request
 from collections import deque
@@ -111,29 +112,142 @@ def ensure_model_exists(model_path=MODEL_PATH):
 # 3. SUMBER VIDEO — Webcam Laptop atau Stream ESP32 (MJPEG / RTSP)
 # ---------------------------------------------------------------------------
 class VideoSource:
+    """
+    Capture di thread daemon. read() menunggu frame baru sebentar, lalu kembali
+    tanpa sleep reconnect — penyambungan ulang terjadi di thread dengan backoff.
+    """
+
     def __init__(self, source, reconnect_delay=2.0):
-        self.source = int(source) if str(source).isdigit() else source
-        self.reconnect_delay = reconnect_delay
-        self.cap = None
-        self._open()
+        self.source = self._normalize(source)
+        self.reconnect_delay = float(reconnect_delay)
+        self._max_backoff = 30.0
+        self._backoff = self.reconnect_delay
+        self._cap = None
+        self._frame = None
+        self._seq = 0
+        self._generation = 0
+        self._opened_generation = -1
+        self._running = True
+        self._cond = threading.Condition()
+        self._thread = threading.Thread(target=self._capture_loop, name="nara-capture", daemon=True)
+        self._thread.start()
 
-    def _open(self):
-        self.cap = cv2.VideoCapture(self.source)
+    @staticmethod
+    def _normalize(source):
+        if isinstance(source, int):
+            return source
+        text = str(source).strip()
+        if text.isdigit():
+            return int(text)
+        return text
 
-    def read(self):
-        if self.cap is None or not self.cap.isOpened():
-            self._open()
-        ok, frame = self.cap.read()
-        if not ok:
-            print("[WARN] Gagal ambil frame (WiFi/stream putus?), reconnecting...")
-            time.sleep(self.reconnect_delay)
-            self._open()
-            ok, frame = self.cap.read()
-        return ok, frame
+    def _open_capture(self, source):
+        if isinstance(source, int) and sys.platform == "win32":
+            return cv2.VideoCapture(source, cv2.CAP_DSHOW)
+        return cv2.VideoCapture(source)
+
+    def _capture_loop(self):
+        while self._running:
+            with self._cond:
+                source = self.source
+                generation = self._generation
+                cap = self._cap
+                opened_for = self._opened_generation
+            if cap is not None and opened_for != generation:
+                with self._cond:
+                    if self._cap is cap:
+                        self._cap.release()
+                        self._cap = None
+                continue
+            if cap is None or not cap.isOpened():
+                try:
+                    new_cap = self._open_capture(source)
+                except Exception:
+                    new_cap = None
+                with self._cond:
+                    if not self._running:
+                        if new_cap is not None:
+                            new_cap.release()
+                        break
+                    if generation != self._generation:
+                        if new_cap is not None:
+                            new_cap.release()
+                        continue
+                    if self._cap is not None:
+                        self._cap.release()
+                    self._cap = new_cap
+                    self._opened_generation = generation
+                    cap = new_cap
+                if cap is None or not cap.isOpened():
+                    print("[WARN] Gagal ambil frame (WiFi/stream putus?), reconnecting...")
+                    self._sleep_backoff()
+                    continue
+                self._backoff = self.reconnect_delay
+
+            ok, frame = False, None
+            try:
+                ok, frame = cap.read()
+            except Exception:
+                ok, frame = False, None
+            if not ok or frame is None:
+                print("[WARN] Gagal ambil frame (WiFi/stream putus?), reconnecting...")
+                with self._cond:
+                    if self._cap is cap and self._cap is not None:
+                        self._cap.release()
+                        self._cap = None
+                self._sleep_backoff()
+                continue
+
+            with self._cond:
+                if not self._running:
+                    break
+                if generation != self._generation:
+                    continue
+                self._frame = frame
+                self._seq += 1
+                self._cond.notify_all()
+
+    def _sleep_backoff(self):
+        delay = self._backoff
+        self._backoff = min(self._max_backoff, max(self.reconnect_delay, self._backoff * 2.0))
+        with self._cond:
+            self._cond.wait(timeout=delay)
+
+    def read(self, timeout=0.5):
+        """Kembalikan frame terbaru. Tidak memblokir selama jeda reconnect."""
+        with self._cond:
+            start = self._seq
+            deadline = time.time() + timeout
+            while self._running and self._seq == start:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    return False, None
+                self._cond.wait(timeout=remaining)
+            if not self._running or self._frame is None:
+                return False, None
+            return True, self._frame.copy()
+
+    def switch(self, source):
+        """Ganti sumber kamera. Thread capture yang menutup perangkat lama."""
+        normalized = self._normalize(source)
+        with self._cond:
+            self.source = normalized
+            self._generation += 1
+            self._backoff = self.reconnect_delay
+            self._frame = None
+            self._seq += 1
+            self._cond.notify_all()
 
     def release(self):
-        if self.cap is not None:
-            self.cap.release()
+        with self._cond:
+            self._running = False
+            cap = self._cap
+            self._cap = None
+            self._cond.notify_all()
+        if cap is not None:
+            cap.release()
+        if self._thread.is_alive():
+            self._thread.join(timeout=2.0)
 
 
 # ---------------------------------------------------------------------------

@@ -96,3 +96,6 @@ generate_synthetic_data.py
 
 # Log files
 *.log
+
+# Pengaturan lokal aplikasi (kamera terakhir, bahasa, volume, token perangkat)
+settings.json

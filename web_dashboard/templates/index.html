@@ -516,6 +516,47 @@
       font-weight: 600
     }
 
+    .inline-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .inline-actions .btn {
+      width: auto;
+      padding: 8px 14px;
+    }
+
+    .inline-actions select,
+    .inline-actions input[type="text"] {
+      flex: 1;
+      min-width: 160px;
+      width: auto;
+    }
+
+    .inline-actions input[type="text"] {
+      background: var(--card);
+      border: 2px solid var(--tx);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+
+    .vol {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      color: var(--mu);
+    }
+
+    input[type="range"] {
+      width: 120px;
+      accent-color: var(--sage);
+    }
+
     .priv {
       font-size: 12px;
       color: var(--mu);
@@ -1239,7 +1280,7 @@
     <section class="view on" id="v-home">
       <div class="hero plaid">
         <div class="torn">
-          <h1>Belajar pakai Teknik Podomoro,<br>NARA yang Jaga Fokusnya !</h1>
+          <h1>Belajar pakai Teknik Pomodoro,<br>NARA yang Jaga Fokusnya !</h1>
         </div>
         <p>Kamera membaca arah wajah dan matamu selama sesi, lalu kamu dapat catatan yang bisa langsung dipakai.</p>
       </div>
@@ -1281,6 +1322,42 @@
             </div>
             <div class="stp">
               <span class="n">3</span>
+              <div>
+                <h3>Pilih kamera</h3>
+                <div class="inline-actions" style="margin-top:0">
+                  <select id="cameraSelect" aria-label="Kamera">
+                    <option value="">Mencari kamera...</option>
+                  </select>
+                  <button type="button" class="btn" id="scanCam">Pindai</button>
+                </div>
+                <div class="inline-actions">
+                  <input id="manualIp" type="text" inputmode="decimal" placeholder="IP manual, contoh 192.168.1.50" aria-label="IP kamera NARA">
+                  <button type="button" class="btn q" id="addIp">Tambah IP</button>
+                </div>
+                <p class="priv" id="camHint">Webcam laptop atau kamera NARA di jaringan yang sama.</p>
+              </div>
+            </div>
+            <div class="stp">
+              <span class="n">4</span>
+              <div>
+                <h3>Bahasa suara</h3>
+                <div class="chips" id="langChips">
+                  <button type="button" class="chip" data-lang="id" aria-pressed="true">Indonesia<small>pengumuman bahasa Indonesia</small></button>
+                  <button type="button" class="chip" data-lang="en" aria-pressed="false">English<small>English voice prompts</small></button>
+                </div>
+                <div class="inline-actions">
+                  <label class="vol">Volume
+                    <input id="vol" type="range" min="0" max="30" value="20" aria-label="Volume suara">
+                    <b id="volNum">20</b>
+                  </label>
+                  <label class="vol"><input id="audioOn" type="checkbox" checked> Suara aktif</label>
+                  <button type="button" class="btn" id="testAudio">Tes suara</button>
+                </div>
+                <p class="priv" id="audioStatus">Pilih kamera NARA supaya suara bisa diputar.</p>
+              </div>
+            </div>
+            <div class="stp">
+              <span class="n">5</span>
               <div>
                 <h3>Cek kamera</h3>
                 <div class="check">
@@ -1483,6 +1560,15 @@
        ========================================================================== */
     const $ = id => document.getElementById(id);
 
+    function esc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     // Alasan yang merupakan kondisi FOKUS dari focus_predictor.py
     // (TIDAK boleh dicatat sebagai gangguan)
     const FOCUSED_REASONS = new Set([
@@ -1511,8 +1597,8 @@
 
     // ── State sesi ──────────────────────────────────────────────────────────────
     const S = {
-      mode: 'idle', focusMin: 25, breakMin: 5,
-      left: 0, total: 0, run: false,
+      mode: 'idle', serverMode: 'IDLE', focusMin: 25, breakMin: 5,
+      left: 0, total: 0, run: false, _prevLeft: null,
       scores: [], buf: [],
       dist: 0, yawn: 0,
       lowFlag: false, yawnFlag: false,
@@ -1521,6 +1607,7 @@
       label: ''
     };
     let _prevScore = 0;
+    let _ending = false;
 
     // ── Navigasi ────────────────────────────────────────────────────────────────
     function show(v) {
@@ -1582,7 +1669,7 @@
       const pred = data.prediction;
       const pomo = data.pomodoro;
 
-      // Status Cek Kamera (Langkah 3) - aktif live di halaman persiapan
+      // Status Cek Kamera (Langkah 5) - aktif live di halaman persiapan
       if (pred) {
         const t = pred.telemetry || {};
         if ($('c2')) {
@@ -1624,9 +1711,8 @@
           face: t.face_detected || false
         });
       }
-      if (pomo && pomo.active_alert) {
-        showBanner(pomo.active_alert.replace(/^\[.*?\]\s*/, ''), pomo.suggested_break);
-      }
+      if (pomo) applyPomo(pomo);
+      if (data.device) applyDevice(data.device);
     }
 
     // ── Definisi metrik CV ─────────────────────────────────────────────────────
@@ -1716,39 +1802,34 @@
     }
     window.NARA = { update };
 
-    // ── Timer lokal ───────────────────────────────────────────────────────────
+    // ── Tampilan timer mengikuti WebSocket (bukan hitungan lokal) ─────────────
     function fmt(s) { return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0') }
     function paint() {
-      $('clock').textContent = fmt(S.left);
-      $('arc').style.strokeDashoffset = 502.65 * (1 - S.left / S.total);
-      const hm = new Date(Date.now() + S.left * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+      const total = S.total > 0 ? S.total : 1;
+      $('clock').textContent = fmt(Math.max(0, S.left));
+      $('arc').style.strokeDashoffset = 502.65 * (1 - Math.max(0, S.left) / total);
+      const hm = new Date(Date.now() + Math.max(0, S.left) * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+      const breakLabel = S.serverMode === 'LONG_BREAK' ? 'istirahat panjang' : ('istirahat ' + S.breakMin + ' menit');
       $('next').innerHTML = S.mode === 'belajar' ?
-        'Berikutnya: <b>istirahat ' + S.breakMin + ' menit</b>, mulai pukul ' + hm :
-        'Istirahat selesai pukul <b>' + hm + '</b>';
+        'Berikutnya: <b>' + esc(breakLabel) + '</b>, mulai pukul ' + esc(hm) :
+        'Istirahat selesai pukul <b>' + esc(hm) + '</b>';
     }
     function flush() {
       if (!S.buf.length) return;
       S.scores.push(Math.round(S.buf.reduce((a, b) => a + b, 0) / S.buf.length)); S.buf = [];
-      $('tl').innerHTML = '<div class="tl">' + S.scores.map(v => `<i class="${v < 55 ? 'lo' : ''}" style="height:${Math.max(6, v)}%" title="${v}%"></i>`).join('') + '</div>';
+      $('tl').innerHTML = '<div class="tl">' + S.scores.map(v => `<i class="${v < 55 ? 'lo' : ''}" style="height:${Math.max(6, Number(v))}%" title="${esc(v)}%"></i>`).join('') + '</div>';
     }
-    setInterval(() => {
-      if (!S.run) return;
-      if (S.left > 0) { S.left--; if (S.mode === 'belajar') { S.elapsed++; if (S.elapsed % 30 === 0) flush(); } }
-      paint();
-      if (S.left <= 0) { S.run = false; S.mode === 'belajar' ? finish() : backToHome(); }
-    }, 1000);
 
-    // ── Kontrol sesi ──────────────────────────────────────────────────────────
-    function begin(mode) {
-      const cls = 'pane timer' + (mode === 'istirahat' ? ' brk' : '');
+    function enterPhase(uiMode, serverMode) {
+      const cls = 'pane timer' + (uiMode === 'istirahat' ? ' brk' : '');
       $('ringcard').className = cls;
-      S.mode = mode; S.total = S.left = (mode === 'belajar' ? S.focusMin : S.breakMin) * 60; S.run = true;
-      $('pause').textContent = 'Jeda';
-      $('phase').textContent = mode === 'belajar' ? 'Sesi belajar' : 'Istirahat';
-      $('sub').textContent = mode === 'belajar' ? 'tersisa' : 'istirahat';
-
-      if (mode === 'istirahat') {
-        // Matikan kamera selama istirahat
+      const freshStudy = uiMode === 'belajar' && S.mode === 'istirahat';
+      S.mode = uiMode;
+      S.serverMode = serverMode;
+      if (freshStudy) resetStats();
+      $('phase').textContent = serverMode === 'LONG_BREAK' ? 'Istirahat panjang' : (uiMode === 'belajar' ? 'Sesi belajar' : 'Istirahat');
+      $('sub').textContent = uiMode === 'belajar' ? 'tersisa' : 'istirahat';
+      if (uiMode === 'istirahat') {
         camOff('Kamera dimatikan selama istirahat.\nBerdiri, minum, lihat yang jauh.');
         $('stateName').textContent = 'Istirahat';
         $('risk').textContent = ''; $('reason').textContent = '';
@@ -1757,15 +1838,53 @@
         $('skip').textContent = 'Lewati istirahat';
         $('ringcard').classList.remove('lo');
       } else {
-        // Nyalakan kamera saat mulai belajar
         camOn();
         $('skip').textContent = 'Lewati sesi ini';
       }
-      paint(); show(mode);
+      show(uiMode);
+    }
+
+    function applyPomo(pomo) {
+      if (!pomo || pomo.mode == null) return;
+      if (_ending) {
+        S.run = false;
+        if (pomo.mode === 'IDLE') _ending = false;
+        return;
+      }
+      const prevLeft = S._prevLeft;
+      S.left = Math.max(0, Number(pomo.time_remaining) || 0);
+      S.run = !!pomo.is_running;
+      if (pomo.duration_sec) S.total = Number(pomo.duration_sec) || S.total;
+      S.serverMode = pomo.mode;
+      if (pomo.mode === 'STUDY' || pomo.mode === 'BREAK' || pomo.mode === 'LONG_BREAK') {
+        const ui = pomo.mode === 'STUDY' ? 'belajar' : 'istirahat';
+        const onSession = document.getElementById('v-sesi').classList.contains('on');
+        if (S.mode !== ui || !onSession) enterPhase(ui, pomo.mode);
+        $('pause').textContent = S.run ? 'Jeda' : 'Lanjutkan';
+        if (ui === 'belajar' && S.run && prevLeft != null && S.left < prevLeft) {
+          const before = S.elapsed;
+          S.elapsed += (prevLeft - S.left);
+          if (Math.floor(S.elapsed / 30) > Math.floor(before / 30)) flush();
+        }
+      }
+      S._prevLeft = S.left;
+      if (S.mode === 'belajar' || S.mode === 'istirahat') paint();
+      if (pomo.active_alert) {
+        showBanner(String(pomo.active_alert).replace(/^\[.*?\]\s*/, ''), pomo.suggested_break);
+      }
+    }
+
+    function applyDevice(device) {
+      const el = $('audioStatus');
+      if (!el || !device) return;
+      if (!device.selected) el.textContent = 'Pilih kamera NARA supaya suara bisa diputar.';
+      else if (device.reachable === false) el.textContent = 'Kamera NARA tidak terjangkau. Suara akan dicoba lagi.';
+      else if (device.paired) el.textContent = 'Suara terhubung ke ' + (device.name || 'kamera NARA') + '.';
+      else el.textContent = 'Menunggu pairing kamera NARA (aktif 2 menit setelah dinyalakan).';
     }
 
     function resetStats() {
-      Object.assign(S, { scores: [], buf: [], dist: 0, yawn: 0, lowFlag: false, yawnFlag: false, elapsed: 0, longest: 0, streak: 0, distrLog: {} });
+      Object.assign(S, { scores: [], buf: [], dist: 0, yawn: 0, lowFlag: false, yawnFlag: false, elapsed: 0, longest: 0, streak: 0, distrLog: {}, _prevLeft: null });
       $('tl').innerHTML = '<div class="tl-empty">Grafik muncul setelah 30 detik pertama.</div>';
       $('sScore').textContent = '—'; $('sDist').textContent = '0'; $('sYawn').textContent = '0';
       resetMetrics();
@@ -1791,32 +1910,35 @@
       resetStats();
       const mapel = (mapelEl && mapelEl.value) ? mapelEl.value : 'Belajar';
       S.label = mapel + ', ' + S.focusMin + ' menit';
+      S.total = S.focusMin * 60;
+      S.left = S.total;
       postAPI('/api/pomodoro/configure', { study_minutes: S.focusMin, break_minutes: S.breakMin, long_break_minutes: S.breakMin * 3 });
       postAPI('/api/pomodoro/start?mode=STUDY&subject=' + encodeURIComponent(mapel));
-      begin('belajar');
+      enterPhase('belajar', 'STUDY');
+      paint();
     };
 
     $('pause').onclick = () => {
-      S.run = !S.run;
-      $('pause').textContent = S.run ? 'Jeda' : 'Lanjutkan';
-      S.run ? postAPI('/api/pomodoro/resume') : postAPI('/api/pomodoro/pause');
+      if (S.run) postAPI('/api/pomodoro/pause');
+      else postAPI('/api/pomodoro/resume');
     };
-    $('skip').onclick = () => { S.mode === 'belajar' ? finish() : backToHome(); };
+    $('skip').onclick = () => postAPI('/api/pomodoro/skip');
     $('end').onclick = () => finish();
-    $('brk').onclick = () => begin('istirahat');
+    $('brk').onclick = () => postAPI('/api/pomodoro/start?mode=BREAK');
 
     function backToHome() {
       S.run = false; S.mode = 'idle';
       camOff('Kamera akan menyala saat sesi dimulai.');
-      postAPI('/api/pomodoro/start?mode=STUDY');  // reset ke ready state
+      postAPI('/api/pomodoro/reset');
       show('home'); loadHistory();
     }
 
     // ── Selesai sesi ──────────────────────────────────────────────────────────
     function finish() {
-      S.run = false; flush();
+      _ending = true;
+      S.run = false; S.mode = 'idle'; flush();
       camOff('Sesi selesai. Kamera dimatikan.');
-      postAPI('/api/pomodoro/skip', null, () => setTimeout(loadHistory, 600));
+      postAPI('/api/pomodoro/end', null, () => setTimeout(loadHistory, 600));
       renderSum({ scores: S.scores, mins: Math.round(S.elapsed / 60), elapsed: S.elapsed, dist: S.dist, yawn: S.yawn, longest: S.longest, distrLog: { ...S.distrLog }, label: S.label });
       show('sum');
     }
@@ -1836,7 +1958,7 @@
         d === 0 ? `Sama dengan sesi sebelumnya (${_prevScore}%).` :
           (d > 0 ? 'Naik ' : 'Turun ') + Math.abs(d) + ` poin dari sesi sebelumnya (${_prevScore}%).`;
 
-      $('rTl').innerHTML = a.map((v, i) => `<i class="${v < 55 ? 'lo' : ''}" style="height:${Math.max(4, v)}%" title="${(i * 30 / 60).toFixed(1)} mnt: ${v}%"></i>`).join('');
+      $('rTl').innerHTML = a.map((v, i) => `<i class="${v < 55 ? 'lo' : ''}" style="height:${Math.max(4, Number(v))}%" title="${esc((i * 30 / 60).toFixed(1))} mnt: ${esc(v)}%"></i>`).join('');
       const endMin = Math.max(1, Math.round(a.length * 30 / 60));
       $('rAx').innerHTML = `<span>Menit 0</span><span>${Math.round(endMin / 2)}</span><span>${endMin}</span>`;
       $('rTime').textContent = (o.mins || Math.ceil(o.elapsed / 60) || 0) + ' mnt';
@@ -1850,7 +1972,7 @@
         '<p class="muted xs" style="padding:4px 0">Tidak ada gangguan tercatat.</p>' :
         entries.map(([r, c]) => {
           const pct = total > 0 ? Math.round(c / total * 100) : 0;
-          return `<div class="metric"><div class="row"><span>${translateReason(r)}</span><span>${c}× (${pct}%)</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+          return `<div class="metric"><div class="row"><span>${esc(translateReason(r))}</span><span>${esc(c)}× (${esc(pct)}%)</span></div><div class="bar"><i style="width:${Number(pct)}%"></i></div></div>`;
         }).join('');
 
       // Insight
@@ -1869,8 +1991,8 @@
         if (entries.length > 0) tr.push(`Gangguan terbanyak: "${translateReason(entries[0][0])}" (${entries[0][1]}×). Coba atasi ini di sesi berikutnya.`);
       } else { tr.push('Jalankan sesi minimal 30 detik supaya NARA punya data untuk dibaca.'); }
       if (!good.length) good.push('Kamu sudah menyelesaikan satu sesi. Itu langkah awal yang penting.');
-      $('rGood').innerHTML = good.map(x => `<li>${x}</li>`).join('');
-      $('rTry').innerHTML = tr.map(x => `<li>${x}</li>`).join('');
+      $('rGood').innerHTML = good.map(x => `<li>${esc(x)}</li>`).join('');
+      $('rTry').innerHTML = tr.map(x => `<li>${esc(x)}</li>`).join('');
       $('brk').textContent = `Istirahat ${S.breakMin} menit`;
       _prevScore = avg;
     }
@@ -1939,7 +2061,9 @@
         const globalIdx = startIdx + idx;
         const type = translateSessionType(item.session_type);
         const date = (item.timestamp || '').substring(0, 16).replace('T', ' ');
-        return `<button type="button" onclick="showHistorySummaryByIndex(${globalIdx})"><span>${date} — ${type}</span><span class="muted">${Math.ceil((item.duration_sec || 0) / 60)} mnt, skor ${item.focus_percentage || 0}%</span></button>`;
+        const mins = Math.ceil((item.duration_sec || 0) / 60);
+        const score = item.focus_percentage || 0;
+        return `<button type="button" onclick="showHistorySummaryByIndex(${Number(globalIdx)})"><span>${esc(date)} — ${esc(type)}</span><span class="muted">${esc(mins)} mnt, skor ${esc(score)}%</span></button>`;
       }).join('');
 
       if (pagEl) {
@@ -2043,12 +2167,111 @@
       b.onclick = () => set(r.dataset.theme === 'dark' ? 'light' : 'dark');
     })();
 
+    // ── Kamera & bahasa suara ────────────────────────────────────────────────────
+    let _cameras = [];
+    let _selectedCam = '';
+
+    function fillCameraSelect(cameras, selectedId) {
+      const sel = $('cameraSelect');
+      if (!sel) return;
+      _cameras = cameras || [];
+      const current = selectedId || sel.value || _selectedCam;
+      sel.innerHTML = _cameras.length
+        ? _cameras.map(cam => `<option value="${esc(cam.id)}">${esc(cam.name || cam.id)}${cam.available === false ? ' (tidak terdeteksi)' : ''}</option>`).join('')
+        : '<option value="">Tidak ada kamera</option>';
+      if (current && Array.from(sel.options).some(o => o.value === current)) sel.value = current;
+      _selectedCam = sel.value;
+    }
+
+    async function loadCameras() {
+      const data = await getAPI('/api/cameras');
+      if (!data) {
+        $('camHint').textContent = 'Gagal memuat daftar kamera.';
+        return;
+      }
+      fillCameraSelect(data.cameras || [], data.selected_id);
+      if (data.language) setLangUi(data.language);
+      if (data.volume != null && $('vol')) {
+        $('vol').value = data.volume;
+        $('volNum').textContent = data.volume;
+      }
+      if ($('audioOn') && data.audio_enabled != null) $('audioOn').checked = !!data.audio_enabled;
+      const chosen = (_cameras || []).find(c => c.id === _selectedCam);
+      $('camHint').textContent = chosen ? ('Dipakai: ' + (chosen.name || chosen.id)) : 'Pilih webcam atau kamera NARA.';
+    }
+
+    function setLangUi(lang) {
+      document.querySelectorAll('#langChips .chip').forEach(c => {
+        c.setAttribute('aria-pressed', c.dataset.lang === lang ? 'true' : 'false');
+      });
+    }
+
+    function currentLang() {
+      const on = document.querySelector('#langChips .chip[aria-pressed=true]');
+      return (on && on.dataset.lang) || 'id';
+    }
+
+    function postAudioConfig() {
+      postAPI('/api/audio/config', {
+        language: currentLang(),
+        volume: Number($('vol').value),
+        enabled: $('audioOn').checked
+      });
+    }
+
+    $('langChips').addEventListener('click', e => {
+      const b = e.target.closest('.chip'); if (!b) return;
+      setLangUi(b.dataset.lang);
+      postAudioConfig();
+    });
+    $('vol').oninput = () => { $('volNum').textContent = $('vol').value; };
+    $('vol').onchange = () => postAudioConfig();
+    $('audioOn').onchange = () => postAudioConfig();
+    $('testAudio').onclick = () => {
+      $('audioStatus').textContent = 'Memutar tes suara...';
+      postAPI('/api/audio/test', {}, (d) => {
+        $('audioStatus').textContent = (d && d.ok) ? 'Tes suara terkirim.' : 'Tes suara gagal. Cek kamera NARA dan pairing.';
+      });
+    };
+    $('scanCam').onclick = () => {
+      $('camHint').textContent = 'Memindai jaringan...';
+      postAPI('/api/devices/rescan', {}, () => loadCameras());
+    };
+    $('addIp').onclick = () => {
+      const ip = ($('manualIp').value || '').trim();
+      if (!ip) return;
+      $('camHint').textContent = 'Menghubungi ' + ip + '...';
+      postAPI('/api/devices/manual', { ip }, (d) => {
+        if (d && d.ok && d.device) {
+          $('manualIp').value = '';
+          loadCameras().then(() => {
+            const id = 'esp:' + d.device.id;
+            if ($('cameraSelect')) $('cameraSelect').value = id;
+            $('cameraSelect').dispatchEvent(new Event('change'));
+          });
+        } else {
+          $('camHint').textContent = 'Perangkat tidak menjawab di alamat itu.';
+        }
+      });
+    };
+    $('cameraSelect').onchange = () => {
+      const id = $('cameraSelect').value;
+      if (!id) return;
+      _selectedCam = id;
+      $('camHint').textContent = 'Mengganti kamera...';
+      postAPI('/api/camera/select', { id }, (d) => {
+        $('camHint').textContent = (d && d.ok) ? 'Kamera dipilih.' : 'Kamera tidak bisa dipilih.';
+        if (d && d.device) applyDevice(d.device);
+      });
+    };
+
     // ── Init ──────────────────────────────────────────────────────────────────────
     camOff('Kamera akan menyala saat sesi dimulai.');
     resetMetrics();
     show('home');
     initWS();
     loadHistory();
+    loadCameras();
   </script>
 </body>
 
