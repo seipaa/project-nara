@@ -468,8 +468,9 @@
     }
 
     .chip {
-      border: 2px solid var(--tx);
-      background: transparent;
+      border: 2px solid var(--line);
+      background: var(--card);
+      color: var(--mu);
       border-radius: 12px;
       padding: 9px 14px;
       cursor: pointer;
@@ -477,22 +478,64 @@
       line-height: 1.35;
       font-weight: 600;
       font-size: 14px;
+      transition: all 0.18s ease;
+      position: relative;
+    }
+
+    .chip:hover {
+      border-color: var(--tx);
+      color: var(--tx);
+      transform: translateY(-1px);
     }
 
     .chip small {
       display: block;
       color: var(--mu);
       font-size: 11.5px;
-      font-weight: 400
+      font-weight: 400;
+      transition: color 0.18s ease;
     }
 
+    /* Selected state - LIGHT MODE */
     .chip[aria-pressed=true] {
-      background: var(--sage);
-      color: #161a14
+      background: var(--tx);
+      color: var(--paper);
+      border-color: var(--tx);
+      box-shadow: 2px 2px 0 var(--sh);
     }
 
     .chip[aria-pressed=true] small {
-      color: #3a4535
+      color: rgba(241, 242, 238, 0.85);
+      font-weight: 500;
+    }
+
+    /* Selected state - DARK MODE: YANG TERPILIH HARUS PUTIH TERANG DAN KONTRAS */
+    :root[data-theme=dark] .chip {
+      background: #182015;
+      border-color: #2f3a2a;
+      color: #a1ac9c;
+    }
+
+    :root[data-theme=dark] .chip:hover {
+      border-color: #7b8e75;
+      color: #e9ede5;
+    }
+
+    :root[data-theme=dark] .chip small {
+      color: #7e8b79;
+    }
+
+    :root[data-theme=dark] .chip[aria-pressed=true] {
+      background: #ffffff !important;
+      color: #11150e !important;
+      border-color: #ffffff !important;
+      font-weight: 700;
+      box-shadow: 0 0 16px rgba(255, 255, 255, 0.28), 3px 3px 0 #3a4b36;
+    }
+
+    :root[data-theme=dark] .chip[aria-pressed=true] small {
+      color: #2a3826 !important;
+      font-weight: 600 !important;
     }
 
     .check {
@@ -526,7 +569,7 @@
 
     .inline-actions .btn {
       width: auto;
-      padding: 8px 14px;
+      padding: 8px 16px;
     }
 
     .inline-actions select,
@@ -536,12 +579,97 @@
       width: auto;
     }
 
-    .inline-actions input[type="text"] {
+    input[type="text"] {
       background: var(--card);
       border: 2px solid var(--tx);
       border-radius: 12px;
-      padding: 10px 12px;
+      padding: 10px 14px;
       font-size: 14px;
+      color: var(--tx);
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    input[type="text"]::placeholder {
+      color: var(--mu);
+      opacity: 0.85;
+    }
+
+    :root[data-theme=dark] input[type="text"] {
+      background: #1a2217;
+      border-color: #4a5c43;
+      color: #ffffff;
+    }
+
+    :root[data-theme=dark] input[type="text"]:focus {
+      border-color: #ffffff;
+      background: #232d1f;
+    }
+
+    :root[data-theme=dark] input[type="text"]::placeholder {
+      color: #9cb096;
+      opacity: 0.9;
+    }
+
+    :root[data-theme=dark] select {
+      background: #1a2217;
+      border-color: #4a5c43;
+      color: #ffffff;
+    }
+
+    :root[data-theme=dark] select:focus {
+      border-color: #ffffff;
+    }
+
+    :root[data-theme=dark] .btn {
+      border-color: #4a5c43;
+      background: #1a2217;
+      color: #ffffff;
+    }
+
+    :root[data-theme=dark] .btn:hover {
+      border-color: #ffffff;
+      background: #253120;
+    }
+
+    :root[data-theme=dark] .btn.p {
+      background: #ffffff !important;
+      color: #11150e !important;
+      border-color: #ffffff !important;
+      font-weight: 700;
+      box-shadow: 2px 2px 0 #4a6045;
+    }
+
+    :root[data-theme=dark] .btn.p:hover {
+      background: #e9ede5 !important;
+    }
+
+    .advanced-toggle {
+      background: none;
+      border: none;
+      padding: 4px 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--mu);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.15s;
+    }
+
+    .advanced-toggle:hover {
+      color: var(--tx);
+    }
+
+    .manual-ip-panel {
+      padding: 10px 12px;
+      border: 1.5px dashed var(--line);
+      border-radius: 12px;
+      background: var(--soft);
+      margin-top: 6px;
     }
 
     .vol {
@@ -1254,10 +1382,280 @@
         transition: none !important
       }
     }
+
+    /* ── MODAL ONBOARDING BAHASA SUARA ─────────────────────────────────────── */
+    .lang-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(18, 22, 16, 0.78);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      transition: opacity 0.35s ease, visibility 0.35s ease;
+    }
+
+    .lang-modal-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+
+    .lang-modal-card {
+      max-width: 500px;
+      width: 100%;
+      background: var(--card);
+      border: 2.5px solid var(--tx);
+      border-radius: 22px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      padding: 30px 24px 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      text-align: center;
+      animation: modalPop 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modalPop {
+      from {
+        transform: scale(0.92);
+        opacity: 0;
+      }
+
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    .lang-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 14px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      background: var(--soft);
+      border: 1.5px solid var(--tx);
+      color: var(--pri);
+      margin: 0 auto;
+    }
+
+    .lang-modal-card h2 {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--tx);
+      line-height: 1.25;
+      margin-top: 2px;
+    }
+
+    .lang-modal-card p {
+      font-size: 13px;
+      color: var(--mu);
+      line-height: 1.5;
+      margin-top: 4px;
+    }
+
+    .lang-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    .lang-opt {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 18px 12px;
+      border: 2px solid var(--line);
+      border-radius: 16px;
+      background: var(--paper);
+      cursor: pointer;
+      transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s, background 0.18s;
+      position: relative;
+      text-align: center;
+      user-select: none;
+    }
+
+    .lang-opt:hover {
+      border-color: var(--tx);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .lang-opt.selected {
+      border-color: var(--tx);
+      background: var(--soft);
+      box-shadow: 0 0 0 2px var(--tx), 0 8px 20px rgba(91, 114, 85, 0.18);
+    }
+
+    .lang-flag {
+      font-size: 36px;
+      line-height: 1;
+    }
+
+    .lang-opt b {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--tx);
+    }
+
+    .lang-opt small {
+      font-size: 11px;
+      color: var(--mu);
+      line-height: 1.3;
+    }
+
+    .check-icon {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--good);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      border: 1.5px solid var(--tx);
+      opacity: 0;
+      transform: scale(0.5);
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .lang-opt.selected .check-icon {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .lang-submit-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 13px 20px;
+      border: 2px solid var(--tx);
+      border-radius: 12px;
+      background: var(--pri);
+      color: var(--pri-tx);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: filter 0.15s, transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+    }
+
+    .lang-submit-btn:hover {
+      filter: brightness(1.08);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+    }
+
+    .lang-submit-btn:active {
+      transform: translateY(0);
+    }
+
+    .sound-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1.5px solid var(--tx);
+      background: var(--soft);
+      color: var(--tx);
+      transition: all 0.2s;
+    }
+
+    .sound-badge.esp {
+      border-color: var(--good);
+      background: rgba(79, 107, 72, 0.15);
+      color: var(--good);
+    }
+
+    /* ── TOAST NOTIFIKASI SUARA ALARM ─────────────────────────────────────── */
+    .voice-toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-30px);
+      background: var(--card);
+      border: 2px solid var(--tx);
+      border-radius: 14px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .voice-toast.show {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
   </style>
 </head>
 
 <body>
+
+  <!-- ===================================================================
+       MODAL ONBOARDING: PILIH BAHASA SUARA NARA
+       =================================================================== -->
+  <div id="langModal" class="lang-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="langModalTitle">
+    <div class="lang-modal-card">
+      <span class="lang-pill">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--good)"></span>
+        Asisten Suara NARA
+      </span>
+      <div>
+        <h2 id="langModalTitle">Pilih Bahasa Suara</h2>
+        <p>NARA akan menyapa dan mengingatkan fokus belajarmu dengan suara cerdas.</p>
+      </div>
+      <div class="lang-options">
+        <div class="lang-opt selected" data-lang="id" id="opt-id" tabindex="0" role="button" aria-pressed="true">
+          <span class="check-icon">✓</span>
+          <span class="lang-flag">🇮🇩</span>
+          <b>Bahasa Indonesia</b>
+          <small>Peringatan dan alarm fokus dalam Bahasa Indonesia</small>
+        </div>
+        <div class="lang-opt" data-lang="en" id="opt-en" tabindex="0" role="button" aria-pressed="false">
+          <span class="check-icon">✓</span>
+          <span class="lang-flag">🇬🇧</span>
+          <b>English Voice</b>
+          <small>Focus reminders and Pomodoro alerts in English</small>
+        </div>
+      </div>
+      <button type="button" class="lang-submit-btn" id="btnConfirmLang">
+        Mulai Belajar dengan NARA <span>→</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFIKASI SUARA ALARM -->
+  <div id="voiceToast" class="voice-toast" role="alert" aria-live="polite">
+    <span style="font-size:18px">📢</span>
+    <span id="voiceToastMsg" style="font-size:13px;font-weight:600">Peringatan fokus aktif.</span>
+  </div>
 
   <header class="top">
     <div class="mark plaid" aria-hidden="true"><span>N</span></div>
@@ -1324,17 +1722,48 @@
               <span class="n">3</span>
               <div>
                 <h3>Pilih kamera</h3>
+
+                <!-- Pilihan Cerdas Ramah Siswa: Laptop vs NARA ESP32 -->
+                <div class="chips" id="camTypeChips" style="margin-bottom:8px">
+                  <button type="button" class="chip" data-cam-type="webcam" id="btnTypeWebcam" aria-pressed="true">
+                    Kamera Laptop<small>Webcam bawaan laptop</small>
+                  </button>
+                  <button type="button" class="chip" data-cam-type="esp" id="btnTypeEsp" aria-pressed="false">
+                    Kamera NARA<small>ESP32 di meja belajar</small>
+                  </button>
+                </div>
+
+                <!-- Pilihan Kamera Spesifik -->
                 <div class="inline-actions" style="margin-top:0">
-                  <select id="cameraSelect" aria-label="Kamera">
+                  <select id="cameraSelect" aria-label="Daftar kamera">
                     <option value="">Mencari kamera...</option>
                   </select>
                   <button type="button" class="btn" id="scanCam">Pindai</button>
                 </div>
-                <div class="inline-actions">
-                  <input id="manualIp" type="text" inputmode="decimal" placeholder="IP manual, contoh 192.168.1.50" aria-label="IP kamera NARA">
-                  <button type="button" class="btn q" id="addIp">Tambah IP</button>
+
+                <p class="priv" id="camHint">Memakai webcam bawaan laptop.</p>
+
+                <!-- Badge Output Suara -->
+                <div style="margin-top:8px">
+                  <span class="sound-badge" id="soundTargetBadge">Output Suara: Speaker Laptop (Browser Audio)</span>
                 </div>
-                <p class="priv" id="camHint">Webcam laptop atau kamera NARA di jaringan yang sama.</p>
+
+                <!-- Opsi Lanjutan: Masukkan IP Manual (Disembunyikan) -->
+                <div style="display:none" id="manualIpContainer">
+                  <button type="button" class="advanced-toggle" id="toggleManualIp">
+                    Opsi Manual: Sambungkan dengan Alamat IP ▾
+                  </button>
+                  <div id="manualIpBox" class="manual-ip-panel" style="display:none">
+                    <div class="inline-actions" style="margin-top:4px">
+                      <input id="manualIp" type="text" inputmode="decimal" placeholder="Contoh IP: 192.168.1.50"
+                        aria-label="IP kamera NARA">
+                      <button type="button" class="btn p" id="addIp">Hubungkan IP</button>
+                    </div>
+                    <small class="muted" style="display:block;margin-top:5px;font-size:11.5px">
+                      Gunakan ini hanya jika kamera NARA belum terdeteksi otomatis lewat tombol Pindai.
+                    </small>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="stp">
@@ -1342,8 +1771,10 @@
               <div>
                 <h3>Bahasa suara</h3>
                 <div class="chips" id="langChips">
-                  <button type="button" class="chip" data-lang="id" aria-pressed="true">Indonesia<small>pengumuman bahasa Indonesia</small></button>
-                  <button type="button" class="chip" data-lang="en" aria-pressed="false">English<small>English voice prompts</small></button>
+                  <button type="button" class="chip" data-lang="id" aria-pressed="true">Indonesia<small>pengumuman
+                      bahasa Indonesia</small></button>
+                  <button type="button" class="chip" data-lang="en" aria-pressed="false">English<small>English voice
+                      prompts</small></button>
                 </div>
                 <div class="inline-actions">
                   <label class="vol">Volume
@@ -1668,9 +2099,23 @@
     function handleWS(data) {
       const pred = data.prediction;
       const pomo = data.pomodoro;
+      const device = data.device;
 
       // Status Cek Kamera (Langkah 5) - aktif live di halaman persiapan
-      if (pred) {
+      const camHealthy = (device && device.camera_healthy !== undefined) ? device.camera_healthy : true;
+      if ($('c1') && device && device.camera_healthy !== undefined) {
+        if (device.camera_healthy) {
+          $('c1').textContent = 'Kamera Aktif';
+          $('c1').className = 'ok';
+        } else {
+          $('c1').textContent = 'Kamera Mati';
+          $('c1').className = 'warn';
+          if ($('c2')) { $('c2').textContent = 'Tidak ada sinyal'; $('c2').className = 'warn'; }
+          if ($('c3')) { $('c3').textContent = 'Menunggu kamera'; $('c3').className = 'warn'; }
+        }
+      }
+
+      if (pred && camHealthy) {
         const t = pred.telemetry || {};
         if ($('c2')) {
           if (t.face_detected) {
@@ -1713,6 +2158,7 @@
       }
       if (pomo) applyPomo(pomo);
       if (data.device) applyDevice(data.device);
+      if (data.type === 'voice_alert') handleVoiceAlert(data);
     }
 
     // ── Definisi metrik CV ─────────────────────────────────────────────────────
@@ -1824,6 +2270,7 @@
       const cls = 'pane timer' + (uiMode === 'istirahat' ? ' brk' : '');
       $('ringcard').className = cls;
       const freshStudy = uiMode === 'belajar' && S.mode === 'istirahat';
+      const freshBreak = uiMode === 'istirahat' && S.mode !== 'istirahat';
       S.mode = uiMode;
       S.serverMode = serverMode;
       if (freshStudy) resetStats();
@@ -1837,6 +2284,9 @@
         $('riskBar').firstChild.style.width = '0';
         $('skip').textContent = 'Lewati istirahat';
         $('ringcard').classList.remove('lo');
+        if (freshBreak) {
+          triggerBreakAudio();
+        }
       } else {
         camOn();
         $('skip').textContent = 'Lewati sesi ini';
@@ -1860,8 +2310,49 @@
         const ui = pomo.mode === 'STUDY' ? 'belajar' : 'istirahat';
         const onSession = document.getElementById('v-sesi').classList.contains('on');
         if (S.mode !== ui || !onSession) enterPhase(ui, pomo.mode);
-        $('pause').textContent = S.run ? 'Jeda' : 'Lanjutkan';
-        if (ui === 'belajar' && S.run && prevLeft != null && S.left < prevLeft) {
+
+        const isCamDisconnected = (pomo.mode === 'STUDY' && (pomo.camera_connected === false || pomo.auto_paused_reason === 'CAMERA_DISCONNECTED'));
+        const isFaceAbsent = (pomo.mode === 'STUDY' && !isCamDisconnected && (pomo.face_detected === false || pomo.auto_paused_reason === 'FACE_NOT_DETECTED'));
+
+        if (isCamDisconnected) {
+          $('pause').textContent = 'Kamera Terputus';
+          $('pause').disabled = true;
+          $('stateName').textContent = 'Kamera Mati';
+          $('camTag').textContent = 'Terputus';
+          $('ringcard').classList.add('lo');
+          showBanner('⚠️ Kamera mati atau tidak terdeteksi! Waktu belajar dijeda otomatis sampai kamera terhubung kembali.', false);
+          $('camFeed').style.display = 'none';
+          $('camMsg').hidden = false;
+          $('camMsg').textContent = 'Kamera tidak terdeteksi atau mati.\nWaktu dijeda otomatis. Hubungkan kamera untuk melanjutkan.';
+        } else if (isFaceAbsent) {
+          $('pause').textContent = 'Wajah Tidak Terdeteksi';
+          $('pause').disabled = true;
+          $('stateName').textContent = 'Dijeda (Wajah Tidak Terdeteksi)';
+          $('camTag').textContent = 'Wajah Hilang';
+          $('ringcard').classList.add('lo');
+          showBanner('⚠️ Wajah tidak terdeteksi! Waktu belajar dijeda otomatis sampai wajah kembali terlihat di depan kamera.', false);
+          if ($('camFeed').style.display === 'none') {
+            $('camMsg').hidden = true;
+            $('camFeed').style.display = 'block';
+          }
+        } else {
+          $('pause').disabled = false;
+          $('pause').textContent = S.run ? 'Jeda' : 'Lanjutkan';
+          $('ringcard').classList.remove('lo');
+          if ($('bannerTxt') && ($('bannerTxt').textContent.includes('Kamera mati') || $('bannerTxt').textContent.includes('Wajah tidak terdeteksi'))) {
+            dismissBanner();
+          }
+          if (ui === 'belajar') {
+            $('stateName').textContent = 'Sesi Belajar';
+            $('camTag').textContent = 'Terhubung';
+            if ($('camFeed').style.display === 'none') {
+              $('camMsg').hidden = true;
+              $('camFeed').style.display = 'block';
+            }
+          }
+        }
+
+        if (ui === 'belajar' && S.run && !isCamDisconnected && !isFaceAbsent && prevLeft != null && S.left < prevLeft) {
           const before = S.elapsed;
           S.elapsed += (prevLeft - S.left);
           if (Math.floor(S.elapsed / 30) > Math.floor(before / 30)) flush();
@@ -1877,9 +2368,18 @@
     function applyDevice(device) {
       const el = $('audioStatus');
       if (!el || !device) return;
-      if (!device.selected) el.textContent = 'Pilih kamera NARA supaya suara bisa diputar.';
+      if (typeof updateSoundBadge === 'function') {
+        updateSoundBadge(device.sound_target);
+      }
+      if (!device.selected) {
+        if (typeof isEspCameraSelected === 'function' && !isEspCameraSelected()) {
+          el.textContent = 'Suara aktif melalui speaker laptop.';
+        } else {
+          el.textContent = 'Pilih kamera NARA supaya modul suara ESP32 aktif.';
+        }
+      }
       else if (device.reachable === false) el.textContent = 'Kamera NARA tidak terjangkau. Suara akan dicoba lagi.';
-      else if (device.paired) el.textContent = 'Suara terhubung ke ' + (device.name || 'kamera NARA') + '.';
+      else if (device.paired) el.textContent = 'Suara terhubung ke ' + (device.name || 'kamera NARA') + ' (modul MP3 siap).';
       else el.textContent = 'Menunggu pairing kamera NARA (aktif 2 menit setelah dinyalakan).';
     }
 
@@ -2174,13 +2674,19 @@
     function fillCameraSelect(cameras, selectedId) {
       const sel = $('cameraSelect');
       if (!sel) return;
-      _cameras = cameras || [];
+      // Hanya tampilkan webcam dan kamera yang terdeteksi
+      _cameras = (cameras || []).filter(c => c.available !== false);
       const current = selectedId || sel.value || _selectedCam;
       sel.innerHTML = _cameras.length
-        ? _cameras.map(cam => `<option value="${esc(cam.id)}">${esc(cam.name || cam.id)}${cam.available === false ? ' (tidak terdeteksi)' : ''}</option>`).join('')
-        : '<option value="">Tidak ada kamera</option>';
-      if (current && Array.from(sel.options).some(o => o.value === current)) sel.value = current;
+        ? _cameras.map(cam => `<option value="${esc(cam.id)}">${esc(cam.name || cam.id)}</option>`).join('')
+        : '<option value="">Tidak ada kamera terdeteksi</option>';
+      if (current && Array.from(sel.options).some(o => o.value === current)) {
+        sel.value = current;
+      } else if (_cameras.length > 0) {
+        sel.value = _cameras[0].id;
+      }
       _selectedCam = sel.value;
+      if (typeof updateCamTypeUi === 'function') updateCamTypeUi(isEspCameraSelected());
     }
 
     async function loadCameras() {
@@ -2198,6 +2704,8 @@
       if ($('audioOn') && data.audio_enabled != null) $('audioOn').checked = !!data.audio_enabled;
       const chosen = (_cameras || []).find(c => c.id === _selectedCam);
       $('camHint').textContent = chosen ? ('Dipakai: ' + (chosen.name || chosen.id)) : 'Pilih webcam atau kamera NARA.';
+      updateSoundBadge();
+      if (typeof updateCamTypeUi === 'function') updateCamTypeUi(isEspCameraSelected());
     }
 
     function setLangUi(lang) {
@@ -2208,60 +2716,337 @@
 
     function currentLang() {
       const on = document.querySelector('#langChips .chip[aria-pressed=true]');
-      return (on && on.dataset.lang) || 'id';
+      return (on && on.dataset.lang) || localStorage.getItem('nara_lang') || 'id';
     }
 
     function postAudioConfig() {
+      const lang = currentLang();
       postAPI('/api/audio/config', {
-        language: currentLang(),
+        language: lang,
         volume: Number($('vol').value),
         enabled: $('audioOn').checked
       });
+      postAPI('/api/settings/audio', {
+        language: lang,
+        volume: Number($('vol').value),
+        audio_enabled: $('audioOn').checked
+      });
+    }
+
+    // ── Logika Adaptif Audio (Laptop vs ESP32) ──────────────────────────────────
+    function isEspCameraSelected() {
+      const sel = $('cameraSelect');
+      const val = (sel && sel.value) ? sel.value : (_selectedCam || '');
+      return val.startsWith('esp:') || val.includes('http') || val.includes(':81');
+    }
+
+    function updateSoundBadge(forcedTarget) {
+      const badge = $('soundTargetBadge');
+      if (!badge) return;
+      const isEsp = (forcedTarget === 'esp32') || (!forcedTarget && isEspCameraSelected());
+      if (isEsp) {
+        badge.className = 'sound-badge esp';
+        badge.innerHTML = 'Output Suara: <b>Speaker ESP32 (Hardware MP3)</b>';
+        if ($('audioStatus')) {
+          const chosen = (_cameras || []).find(c => c.id === _selectedCam);
+          $('audioStatus').textContent = 'Suara diputar melalui modul MP3 kamera NARA (' + (chosen?.name || 'ESP32') + ').';
+        }
+      } else {
+        badge.className = 'sound-badge';
+        badge.innerHTML = 'Output Suara: <b>Speaker Laptop (Browser Audio)</b>';
+        if ($('audioStatus')) {
+          $('audioStatus').textContent = 'Suara alarm & pengingat diputar langsung via speaker laptop.';
+        }
+      }
+    }
+
+    const TRACK_FILES = {
+      '001': '001_not_focus.mp3',
+      '002': '002_waktu_habis.mp3',
+      '003': '003_istirahat.mp3',
+      1: '001_not_focus.mp3',
+      2: '002_waktu_habis.mp3',
+      3: '003_istirahat.mp3',
+      'NOT_FOCUSED': '001_not_focus.mp3',
+      'SLEEPING': '001_not_focus.mp3',
+      'YAWNING': '001_not_focus.mp3',
+      'FACE_ABSENT': '001_not_focus.mp3',
+      'WAKTU_HABIS': '002_waktu_habis.mp3',
+      'SESSION_END': '002_waktu_habis.mp3',
+      'ISTIRAHAT': '003_istirahat.mp3',
+      'BREAK': '003_istirahat.mp3'
+    };
+
+    let _activeAudio = null;
+
+    function playAlertAudio(track, langFolder) {
+      if ($('audioOn') && !$('audioOn').checked) return;
+      const lang = currentLang();
+      const folder = langFolder || (lang === 'en' ? '02' : '01');
+      let filename = track || '001_not_focus.mp3';
+      if (TRACK_FILES[filename]) {
+        filename = TRACK_FILES[filename];
+      } else if (!String(filename).endsWith('.mp3')) {
+        const codeKey = String(filename).padStart(3, '0');
+        filename = TRACK_FILES[codeKey] || '001_not_focus.mp3';
+      }
+
+      const audioSrc = `/suara/${folder}/${filename}`;
+      try {
+        if (_activeAudio) {
+          _activeAudio.pause();
+          _activeAudio.currentTime = 0;
+        }
+        const audio = new Audio(audioSrc);
+        const volInput = $('vol');
+        const volVal = volInput ? Math.max(0, Math.min(1, Number(volInput.value) / 30)) : 0.7;
+        audio.volume = volVal;
+        _activeAudio = audio;
+        audio.play().catch(err => {
+          console.warn('Audio playback laptop dicegah/tertunda:', err);
+        });
+      } catch (err) {
+        console.error('Gagal memutar audio di speaker laptop:', err);
+      }
+    }
+
+    let _voiceToastTimer = null;
+    let _lastBreakAudioTs = 0;
+    const VOICE_MESSAGES = {
+      '001': 'Fokus berkurang — yuk kembali perhatikan materi!',
+      '002': 'Sesi Pomodoro selesai — waktu belajar telah habis!',
+      '003': 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!',
+      'NOT_FOCUSED': 'Fokus berkurang — yuk kembali perhatikan materi!',
+      'SLEEPING': 'Terdeteksi mengantuk / mata lelah — segarkan mata sejenak!',
+      'YAWNING': 'Menguap terdeteksi — tarik napas dalam dan tetap fokus!',
+      'FACE_ABSENT': 'Wajah tidak terdeteksi di depan kamera.',
+      'BREAK': 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!',
+      'ISTIRAHAT': 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!',
+      'SESSION_END': 'Sesi Pomodoro selesai — waktu belajar telah habis!',
+      'welcome': 'Asisten suara NARA siap mendampingi belajarmu.'
+    };
+
+    function triggerBreakAudio() {
+      const now = Date.now();
+      if (now - _lastBreakAudioTs < 3000) return;
+      _lastBreakAudioTs = now;
+      const isEsp = isEspCameraSelected();
+      const soundTarget = isEsp ? 'esp32' : 'laptop';
+      const lang = currentLang();
+      const folder = lang === 'en' ? '02' : '01';
+      if (!isEsp) {
+        playAlertAudio('003_istirahat.mp3', folder);
+      }
+      showVoiceToast('003', 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!', soundTarget);
+    }
+
+    function showVoiceToast(code, reason, soundTarget) {
+      const toast = $('voiceToast');
+      const msgEl = $('voiceToastMsg');
+      if (!toast || !msgEl) return;
+
+      const isEsp = (soundTarget === 'esp32');
+      const icon = isEsp ? '📡' : '🔊';
+      const targetLabel = isEsp ? 'Speaker ESP32' : 'Speaker Laptop';
+      const cleanCode = String(code || '').substring(0, 3);
+      const text = reason || VOICE_MESSAGES[code] || VOICE_MESSAGES[cleanCode] || 'Peringatan fokus aktif.';
+
+      msgEl.innerHTML = `<span style="opacity:0.75;font-weight:700">[${icon} ${targetLabel}]</span> ${esc(text)}`;
+      toast.classList.add('show');
+
+      if (_voiceToastTimer) clearTimeout(_voiceToastTimer);
+      _voiceToastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 4500);
+    }
+
+    function handleVoiceAlert(data) {
+      if (!data) return;
+      const soundTarget = data.sound_target || (isEspCameraSelected() ? 'esp32' : 'laptop');
+      const alertInfo = data.alert || {};
+      const code = alertInfo.code || data.track || '001';
+      const reason = alertInfo.reason || '';
+
+      if (code === 'BREAK' || code === 'ISTIRAHAT' || String(data.track).includes('003')) {
+        const now = Date.now();
+        if (now - _lastBreakAudioTs < 3000) return;
+        _lastBreakAudioTs = now;
+      }
+
+      if (soundTarget === 'laptop') {
+        playAlertAudio(data.track || code, data.lang_folder);
+      }
+      showVoiceToast(code, reason, soundTarget);
+    }
+
+    // ── Onboarding Modal Pemilihan Bahasa Suara ──────────────────────────────────
+    function initLangModal() {
+      const modal = $('langModal');
+      const optId = $('opt-id');
+      const optEn = $('opt-en');
+      const btnConfirm = $('btnConfirmLang');
+      if (!modal) return;
+
+      let chosenLang = localStorage.getItem('nara_lang') || 'id';
+
+      function updateCardSelection(lang) {
+        chosenLang = lang;
+        if (optId) {
+          optId.classList.toggle('selected', lang === 'id');
+          optId.setAttribute('aria-pressed', lang === 'id' ? 'true' : 'false');
+        }
+        if (optEn) {
+          optEn.classList.toggle('selected', lang === 'en');
+          optEn.setAttribute('aria-pressed', lang === 'en' ? 'true' : 'false');
+        }
+      }
+
+      if (optId) optId.onclick = () => updateCardSelection('id');
+      if (optEn) optEn.onclick = () => updateCardSelection('en');
+
+      if (btnConfirm) {
+        btnConfirm.onclick = () => {
+          localStorage.setItem('nara_lang', chosenLang);
+          setLangUi(chosenLang);
+          postAPI('/api/settings/audio', {
+            language: chosenLang,
+            volume: Number($('vol') ? $('vol').value : 20),
+            audio_enabled: $('audioOn') ? $('audioOn').checked : true
+          });
+
+          // User gesture untuk membuka izin AudioContext browser
+          try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            if (ctx.state === 'suspended') ctx.resume();
+          } catch (_) { }
+
+          modal.classList.add('hidden');
+          showVoiceToast('welcome', chosenLang === 'en' ? 'Voice assistant diatur ke English.' : 'Asisten suara diatur ke Bahasa Indonesia.', isEspCameraSelected() ? 'esp32' : 'laptop');
+        };
+      }
+
+      const saved = localStorage.getItem('nara_lang');
+      if (saved) {
+        modal.classList.add('hidden');
+        setLangUi(saved);
+        updateCardSelection(saved);
+        postAPI('/api/settings/audio', { language: saved });
+      } else {
+        updateCardSelection('id');
+        modal.classList.remove('hidden');
+      }
     }
 
     $('langChips').addEventListener('click', e => {
       const b = e.target.closest('.chip'); if (!b) return;
-      setLangUi(b.dataset.lang);
+      const lang = b.dataset.lang || 'id';
+      setLangUi(lang);
+      localStorage.setItem('nara_lang', lang);
       postAudioConfig();
     });
     $('vol').oninput = () => { $('volNum').textContent = $('vol').value; };
     $('vol').onchange = () => postAudioConfig();
     $('audioOn').onchange = () => postAudioConfig();
     $('testAudio').onclick = () => {
-      $('audioStatus').textContent = 'Memutar tes suara...';
-      postAPI('/api/audio/test', {}, (d) => {
-        $('audioStatus').textContent = (d && d.ok) ? 'Tes suara terkirim.' : 'Tes suara gagal. Cek kamera NARA dan pairing.';
-      });
+      const isEsp = isEspCameraSelected();
+      if (!isEsp) {
+        $('audioStatus').textContent = 'Memutar tes suara di speaker laptop...';
+        const langF = currentLang() === 'en' ? '02' : '01';
+        playAlertAudio('001_not_focus.mp3', langF);
+        showVoiceToast('001', 'Tes suara diputar di speaker laptop', 'laptop');
+        setTimeout(() => {
+          $('audioStatus').textContent = 'Tes suara selesai.';
+        }, 1200);
+      } else {
+        $('audioStatus').textContent = 'Mengirim tes suara ke modul MP3 ESP32...';
+        postAPI('/api/audio/test', {}, (d) => {
+          $('audioStatus').textContent = (d && d.ok) ? 'Tes suara terkirim ke ESP32.' : 'Tes suara gagal. Cek kamera NARA dan pairing.';
+          if (d && d.ok) showVoiceToast('001', 'Tes suara terkirim ke modul MP3 ESP32', 'esp32');
+        });
+      }
     };
+    // ── Sinkronisasi UI Tipe Kamera (Laptop vs ESP32) ──────────────────────────
+    function updateCamTypeUi(isEsp) {
+      if ($('btnTypeWebcam')) $('btnTypeWebcam').setAttribute('aria-pressed', isEsp ? 'false' : 'true');
+      if ($('btnTypeEsp')) $('btnTypeEsp').setAttribute('aria-pressed', isEsp ? 'true' : 'false');
+    }
+
+    if ($('btnTypeWebcam')) {
+      $('btnTypeWebcam').onclick = () => {
+        updateCamTypeUi(false);
+        const sel = $('cameraSelect');
+        if (!sel) return;
+        const webcamOpt = Array.from(sel.options).find(o => !o.value.startsWith('esp:'));
+        if (webcamOpt) {
+          sel.value = webcamOpt.value;
+          sel.dispatchEvent(new Event('change'));
+        }
+      };
+    }
+
+    if ($('btnTypeEsp')) {
+      $('btnTypeEsp').onclick = () => {
+        updateCamTypeUi(true);
+        const sel = $('cameraSelect');
+        if (!sel) return;
+        const espOpt = Array.from(sel.options).find(o => o.value.startsWith('esp:'));
+        if (espOpt) {
+          sel.value = espOpt.value;
+          sel.dispatchEvent(new Event('change'));
+        } else {
+          $('camHint').textContent = 'Mencari kamera NARA di jaringan Wi-Fi...';
+          $('scanCam').click();
+        }
+      };
+    }
+
+    if ($('toggleManualIp')) {
+      $('toggleManualIp').onclick = () => {
+        const box = $('manualIpBox');
+        if (!box) return;
+        const isHidden = box.style.display === 'none' || !box.style.display;
+        box.style.display = isHidden ? 'block' : 'none';
+        $('toggleManualIp').innerHTML = isHidden
+          ? '⚙️ Sembunyikan Opsi IP Manual ▴'
+          : '⚙️ Opsi Manual: Sambungkan dengan Alamat IP ▾';
+      };
+    }
+
     $('scanCam').onclick = () => {
       $('camHint').textContent = 'Memindai jaringan...';
       postAPI('/api/devices/rescan', {}, () => loadCameras());
     };
-    $('addIp').onclick = () => {
-      const ip = ($('manualIp').value || '').trim();
-      if (!ip) return;
-      $('camHint').textContent = 'Menghubungi ' + ip + '...';
-      postAPI('/api/devices/manual', { ip }, (d) => {
-        if (d && d.ok && d.device) {
-          $('manualIp').value = '';
-          loadCameras().then(() => {
-            const id = 'esp:' + d.device.id;
-            if ($('cameraSelect')) $('cameraSelect').value = id;
-            $('cameraSelect').dispatchEvent(new Event('change'));
-          });
-        } else {
-          $('camHint').textContent = 'Perangkat tidak menjawab di alamat itu.';
-        }
-      });
-    };
+    if ($('addIp')) {
+      $('addIp').onclick = () => {
+        const ip = ($('manualIp').value || '').trim();
+        if (!ip) return;
+        $('camHint').textContent = 'Menghubungi ' + ip + '...';
+        postAPI('/api/devices/manual', { ip }, (d) => {
+          if (d && d.ok && d.device) {
+            $('manualIp').value = '';
+            if ($('manualIpBox')) $('manualIpBox').style.display = 'none';
+            loadCameras().then(() => {
+              const id = 'esp:' + d.device.id;
+              if ($('cameraSelect')) $('cameraSelect').value = id;
+              $('cameraSelect').dispatchEvent(new Event('change'));
+            });
+          } else {
+            $('camHint').textContent = 'Perangkat tidak menjawab di alamat itu.';
+          }
+        });
+      };
+    }
     $('cameraSelect').onchange = () => {
       const id = $('cameraSelect').value;
       if (!id) return;
       _selectedCam = id;
+      updateCamTypeUi(isEspCameraSelected());
+      updateSoundBadge();
       $('camHint').textContent = 'Mengganti kamera...';
       postAPI('/api/camera/select', { id }, (d) => {
         $('camHint').textContent = (d && d.ok) ? 'Kamera dipilih.' : 'Kamera tidak bisa dipilih.';
         if (d && d.device) applyDevice(d.device);
+        else updateSoundBadge();
       });
     };
 
@@ -2272,6 +3057,8 @@
     initWS();
     loadHistory();
     loadCameras();
+    initLangModal();
+    updateSoundBadge();
   </script>
 </body>
 

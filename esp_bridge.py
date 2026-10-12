@@ -10,9 +10,11 @@ import httpx
 
 EVENT_PRIORITY = {
     "SESSION_END": 0,
-    "BREAK_END": 1,
-    "SESSION_START": 2,
-    "UNFOCUSED": 3,
+    "BREAK": 1,
+    "ISTIRAHAT": 1,
+    "BREAK_END": 2,
+    "SESSION_START": 3,
+    "UNFOCUSED": 4,
 }
 UNFOCUSED_MAX_AGE_SEC = 5.0
 HTTP_TIMEOUT = 2.0

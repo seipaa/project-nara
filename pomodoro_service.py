@@ -60,7 +60,7 @@ SUBJECT_WHITELIST = (
 SUBJECT_FALLBACK = "Belajar"
 SUBJECT_MAX_LEN = 40
 
-AUDIO_EVENTS = ("SESSION_START", "UNFOCUSED", "BREAK_END", "SESSION_END")
+AUDIO_EVENTS = ("SESSION_START", "UNFOCUSED", "BREAK", "ISTIRAHAT", "BREAK_END", "SESSION_END")
 
 
 def sanitize_subject(subject):
@@ -98,6 +98,9 @@ class PomodoroService:
         self.last_tick = None
         self._tick_fraction = 0.0
         self.session_start_time = None
+        self.camera_connected = True
+        self.face_detected = True
+        self.auto_paused_reason = None
 
         # Stats akumulasi sesi
         self.total_focus_seconds = 0.0
@@ -215,6 +218,8 @@ class PomodoroService:
         self._reset_session_stats()
         if emit_session_start and mode == "STUDY":
             self._queue("SESSION_START")
+        elif mode in ("BREAK", "LONG_BREAK"):
+            self._queue("BREAK")
 
     def start(self, mode="STUDY", subject=None):
         """Memulai timer Pomodoro. Mode di luar whitelist diabaikan."""
@@ -318,7 +323,10 @@ class PomodoroService:
             self._start_locked("BREAK")
             self.suggested_break = False
             self.active_alert = None
-            return self.get_status()
+            status = self.get_status()
+            pending, listeners = self._take_events()
+        self._dispatch(pending, listeners)
+        return status
 
     def dismiss_alert(self):
         """Menutup notifikasi alert."""
@@ -344,28 +352,44 @@ class PomodoroService:
             "long_break_minutes": long_break_min,
         }
 
-    def tick(self):
+    def tick(self, camera_connected: bool = True, face_detected: Optional[bool] = None):
         """
-        Majukan timer berdasarkan waktu nyata. Dipanggil ~1 Hz dari loop terpisah,
-        termasuk saat kamera mati selama istirahat.
+        Majukan timer berdasarkan waktu nyata. Dipanggil ~1 Hz dari loop terpisah.
+        Jika mode STUDY:
+        - jika kamera tidak terhubung -> jeda otomatis (CAMERA_DISCONNECTED)
+        - jika wajah tidak terdeteksi -> jeda otomatis (FACE_NOT_DETECTED)
+        Saat mode BREAK / LONG_BREAK, timer tetap berjalan tanpa kamera/wajah.
         """
         with self._lock:
+            self.camera_connected = bool(camera_connected)
+            if face_detected is not None:
+                self.face_detected = bool(face_detected)
+            now = time.time()
             if self.is_running and self.mode in ALLOWED_MODES:
-                now = time.time()
-                if self.last_tick is None:
+                if self.mode == "STUDY" and not self.camera_connected:
+                    # Freeze timer: kamera tidak aktif / mati
+                    self.auto_paused_reason = "CAMERA_DISCONNECTED"
                     self.last_tick = now
-                delta = now - self.last_tick
-                self.last_tick = now
-                if delta < 0:
-                    delta = 0.0
-                delta = min(delta, TICK_DELTA_CAP_SEC)
-                self._tick_fraction += delta
-                whole = int(self._tick_fraction)
-                if whole > 0:
-                    self._tick_fraction -= whole
-                    self.time_remaining = max(0, self.time_remaining - whole)
-                if self.time_remaining <= 0:
-                    self._expire_locked()
+                elif self.mode == "STUDY" and not self.face_detected:
+                    # Freeze timer: wajah siswa tidak terdeteksi
+                    self.auto_paused_reason = "FACE_NOT_DETECTED"
+                    self.last_tick = now
+                else:
+                    self.auto_paused_reason = None
+                    if self.last_tick is None:
+                        self.last_tick = now
+                    delta = now - self.last_tick
+                    self.last_tick = now
+                    if delta < 0:
+                        delta = 0.0
+                    delta = min(delta, TICK_DELTA_CAP_SEC)
+                    self._tick_fraction += delta
+                    whole = int(self._tick_fraction)
+                    if whole > 0:
+                        self._tick_fraction -= whole
+                        self.time_remaining = max(0, self.time_remaining - whole)
+                    if self.time_remaining <= 0:
+                        self._expire_locked()
             status = self.get_status()
             pending, listeners = self._take_events()
         self._dispatch(pending, listeners)
@@ -387,11 +411,29 @@ class PomodoroService:
         """
         now = time.time()
         with self._lock:
+            telemetry = prediction_data.get("telemetry", {}) or {}
+            reason = telemetry.get("reason", "Normal")
+            face_detected = bool(telemetry.get("face_detected", False))
+
+            if "Wajah Tidak Terdeteksi" in reason or "Wajah Belum Terdeteksi" in reason:
+                self.face_detected = False
+            elif face_detected:
+                self.face_detected = True
+
             if not self.is_running or self.mode != "STUDY":
                 self._telemetry_ts = now
                 self._was_yawning = False
                 self.unfocused_start_time = None
                 self.sleep_start_time = None
+                return self.get_status()
+
+            # Saat sesi auto-paused (kamera mati atau wajah tidak terdeteksi),
+            # timer berhenti dan waktu belajar tidak diakumulasikan
+            if not self.camera_connected or not self.face_detected:
+                self._telemetry_ts = now
+                if not self.face_detected and self.unfocused_start_time is None:
+                    self.unfocused_start_time = now
+                    self.total_distraction_events += 1
                 return self.get_status()
 
             if self._telemetry_ts is None:
@@ -404,11 +446,8 @@ class PomodoroService:
             dt = min(dt, TELEMETRY_DT_CAP_SEC)
 
             label = prediction_data.get("label", 0)
-            telemetry = prediction_data.get("telemetry", {}) or {}
             is_sleeping = bool(telemetry.get("is_sleeping", False))
             is_yawning = bool(telemetry.get("is_yawning", False))
-            reason = telemetry.get("reason", "Normal")
-            face_detected = bool(telemetry.get("face_detected", False))
 
             if label == 0 and face_detected:
                 self.total_focus_seconds += dt
@@ -481,9 +520,19 @@ class PomodoroService:
         secs = int(self.time_remaining) % 60
         time_formatted = f"{mins:02d}:{secs:02d}"
 
+        is_auto_paused = bool(
+            self.mode == "STUDY"
+            and self.is_running
+            and (
+                not getattr(self, "camera_connected", True)
+                or not getattr(self, "face_detected", True)
+            )
+        )
+
         return {
             "mode": self.mode,
-            "is_running": self.is_running,
+            "is_running": self.is_running and not is_auto_paused,
+            "raw_is_running": self.is_running,
             "time_remaining": int(self.time_remaining),
             "time_formatted": time_formatted,
             "duration_sec": int(self._duration_for_mode()),
@@ -497,6 +546,10 @@ class PomodoroService:
             "sleep_count": self.total_sleep_events,
             "active_alert": self.active_alert,
             "suggested_break": self.suggested_break,
+            "camera_connected": getattr(self, "camera_connected", True),
+            "face_detected": getattr(self, "face_detected", True),
+            "auto_paused_reason": getattr(self, "auto_paused_reason", None),
+            "is_auto_paused": is_auto_paused,
         }
 
     def _save_session_log(self, session_type):

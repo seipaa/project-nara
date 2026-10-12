@@ -22,13 +22,17 @@ Tekan 'q' atau klik tombol [X] untuk keluar.
 """
 
 import argparse
+import http.client
 import math
 import os
+import queue
+import socket
 import sys
 import threading
 import time
 import urllib.request
 from collections import deque
+from urllib.parse import urlsplit, urlunsplit
 
 import cv2
 import numpy as np
@@ -111,6 +115,155 @@ def ensure_model_exists(model_path=MODEL_PATH):
 # ---------------------------------------------------------------------------
 # 3. SUMBER VIDEO — Webcam Laptop atau Stream ESP32 (MJPEG / RTSP)
 # ---------------------------------------------------------------------------
+class HttpCameraReader:
+    """Baca kamera HTTP tanpa OpenCV/FFmpeg.
+
+    OpenCV VideoCapture membuka beberapa koneksi ke /stream ESP32. Server
+    kamera hanya melayani satu klien MJPEG, sehingga koneksi mudah gagal.
+    Pembaca ini memakai /capture (satu JPEG) bila tersedia, atau satu
+    koneksi MJPEG langsung sebagai cadangan.
+    """
+
+    def __init__(self, url, timeout=5.0):
+        self.source_url = url
+        self.timeout = timeout
+        self.mode = "snapshot"
+        self.snapshot_url = url
+        self._mjpeg_conn = None
+        self._mjpeg_resp = None
+        self._configure()
+
+    def _configure(self):
+        parsed = urlsplit(self.source_url)
+        path = parsed.path.rstrip("/")
+        if path.endswith("capture") or path.endswith(".jpg") or path.endswith(".jpeg"):
+            self.mode = "snapshot"
+            self.snapshot_url = self.source_url
+            print(f"[INFO] Kamera HTTP snapshot: {self.snapshot_url}")
+            return
+
+        if path.endswith("stream"):
+            host = parsed.hostname
+            capture_netloc = host if not parsed.port or parsed.port == 80 else f"{host}"
+            capture_url = urlunsplit((parsed.scheme, capture_netloc, "/capture", "", ""))
+            if self._probe_jpeg(capture_url):
+                self.mode = "snapshot"
+                self.snapshot_url = capture_url
+                print(
+                    f"[INFO] ESP32 terdeteksi. NARA memakai {capture_url} "
+                    "agar stream tetap hemat resource."
+                )
+                return
+            print("[WARN] /capture tidak merespons JPEG; NARA memakai MJPEG /stream.")
+
+        self.mode = "mjpeg"
+        print(f"[INFO] Kamera HTTP MJPEG: {self.source_url}")
+
+    @staticmethod
+    def _probe_jpeg(url, timeout=3.0):
+        try:
+            req = urllib.request.Request(url, headers={"Connection": "close"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                ctype = (resp.headers.get_content_type() or "").lower()
+                data = resp.read(16)
+                return ctype == "image/jpeg" or data[:2] == b"\xff\xd8"
+        except Exception:
+            return False
+
+    @staticmethod
+    def _decode_jpeg(data):
+        if not data:
+            return False, None
+        frame = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return False, None
+        return True, frame
+
+    def _read_snapshot(self):
+        try:
+            req = urllib.request.Request(self.snapshot_url, headers={"Connection": "close"})
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                data = resp.read()
+            return self._decode_jpeg(data)
+        except Exception as exc:
+            print(f"[WARN] Gagal ambil snapshot kamera: {exc}")
+            return False, None
+
+    def _close_mjpeg(self):
+        if self._mjpeg_resp is not None:
+            try:
+                self._mjpeg_resp.close()
+            except Exception:
+                pass
+            self._mjpeg_resp = None
+        if self._mjpeg_conn is not None:
+            try:
+                self._mjpeg_conn.close()
+            except Exception:
+                pass
+            self._mjpeg_conn = None
+
+    def _open_mjpeg(self):
+        self._close_mjpeg()
+        parsed = urlsplit(self.source_url)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        path = parsed.path or "/"
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+        if parsed.scheme == "https":
+            conn = http.client.HTTPSConnection(parsed.hostname, port, timeout=self.timeout)
+        else:
+            conn = http.client.HTTPConnection(parsed.hostname, port, timeout=self.timeout)
+        conn.request("GET", path, headers={"Accept": "multipart/x-mixed-replace,image/jpeg,*/*"})
+        resp = conn.getresponse()
+        if resp.status != 200:
+            conn.close()
+            raise RuntimeError(f"HTTP {resp.status} dari {self.source_url}")
+        self._mjpeg_conn = conn
+        self._mjpeg_resp = resp
+
+    def _read_mjpeg_bytes(self):
+        resp = self._mjpeg_resp
+        buf = bytearray()
+        while True:
+            chunk = resp.read(4096)
+            if not chunk:
+                raise EOFError("Koneksi MJPEG terputus")
+            buf.extend(chunk)
+            start = buf.find(b"\xff\xd8")
+            if start < 0:
+                if len(buf) > 1024 * 1024:
+                    buf.clear()
+                continue
+            end = buf.find(b"\xff\xd9", start + 2)
+            if end < 0:
+                if start > 0:
+                    del buf[:start]
+                continue
+            return bytes(buf[start:end + 2])
+
+    def _read_mjpeg(self):
+        try:
+            if self._mjpeg_resp is None:
+                self._open_mjpeg()
+            return self._decode_jpeg(self._read_mjpeg_bytes())
+        except Exception as exc:
+            print(f"[WARN] Gagal baca MJPEG: {exc}")
+            self._close_mjpeg()
+            return False, None
+
+    def read(self):
+        if self.mode == "snapshot":
+            return self._read_snapshot()
+        return self._read_mjpeg()
+
+    def isOpened(self):
+        return True
+
+    def release(self):
+        self._close_mjpeg()
+
+
 class VideoSource:
     """
     Capture di thread daemon. read() menunggu frame baru sebentar, lalu kembali
@@ -128,6 +281,10 @@ class VideoSource:
         self._generation = 0
         self._opened_generation = -1
         self._running = True
+        self.resolved_ip = None
+        self.resolved_http_url = None
+        self._last_frame_time = 0.0
+        self._is_connected = False
         self._cond = threading.Condition()
         self._thread = threading.Thread(target=self._capture_loop, name="nara-capture", daemon=True)
         self._thread.start()
@@ -141,9 +298,111 @@ class VideoSource:
             return int(text)
         return text
 
+    @staticmethod
+    def _replace_host(parsed_url, ip, port=None):
+        use_port = port if port is not None else parsed_url.port
+        netloc = f"{ip}:{use_port}" if use_port else ip
+        return urlunsplit((
+            parsed_url.scheme,
+            netloc,
+            parsed_url.path,
+            parsed_url.query,
+            parsed_url.fragment,
+        ))
+
+    @staticmethod
+    def _resolve_http_url(parsed_url, timeout=5.0):
+        hostname = parsed_url.hostname
+        if not hostname:
+            return urlunsplit(parsed_url)
+        if not hostname.lower().endswith(".local"):
+            return urlunsplit(parsed_url)
+
+        ip = VideoSource._resolve_local_hostname(hostname, timeout)
+        if not ip:
+            print(f"[WARN] mDNS {hostname} belum ditemukan; periksa Wi-Fi dan firmware ESP32.")
+            return urlunsplit(parsed_url)
+
+        resolved = VideoSource._replace_host(parsed_url, ip)
+        print(f"[INFO] mDNS {hostname} ditemukan di {ip}; NARA memakai {resolved}")
+        return resolved
+
+    @staticmethod
+    def _resolve_local_hostname(hostname, timeout=5.0):
+        try:
+            infos = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
+            if infos:
+                return infos[0][4][0]
+        except socket.gaierror:
+            pass
+
+        try:
+            from zeroconf import IPVersion, ServiceBrowser, ServiceStateChange, Zeroconf
+        except ImportError as exc:
+            print(f"[WARN] Paket zeroconf belum terpasang: {exc}")
+            return None
+
+        target_host = hostname.rstrip(".").lower()
+        discovered_services = queue.Queue()
+
+        def on_service_state_change(zc, service_type, name, state_change):
+            if state_change is ServiceStateChange.Added:
+                discovered_services.put((service_type, name))
+
+        zc = None
+        browser = None
+        try:
+            zc = Zeroconf(ip_version=IPVersion.V4Only)
+            browser = ServiceBrowser(
+                zc,
+                "_http._tcp.local.",
+                handlers=[on_service_state_change],
+            )
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                try:
+                    service_type, name = discovered_services.get(
+                        timeout=min(0.25, max(0.01, deadline - time.monotonic()))
+                    )
+                except queue.Empty:
+                    continue
+
+                info = zc.get_service_info(service_type, name, timeout=1000)
+                if not info or not info.server:
+                    continue
+                service_host = info.server.rstrip(".").lower()
+                if service_host != target_host:
+                    continue
+                addresses = info.parsed_addresses(IPVersion.V4Only)
+                if addresses:
+                    return addresses[0]
+        except Exception as exc:
+            print(f"[WARN] Pencarian mDNS {target_host} gagal: {exc}")
+        finally:
+            if browser is not None:
+                browser.cancel()
+            if zc is not None:
+                zc.close()
+        return None
+
     def _open_capture(self, source):
-        if isinstance(source, int) and sys.platform == "win32":
-            return cv2.VideoCapture(source, cv2.CAP_DSHOW)
+        if isinstance(source, int):
+            if sys.platform == "win32":
+                return cv2.VideoCapture(source, cv2.CAP_DSHOW)
+            return cv2.VideoCapture(source)
+
+        text = str(source).strip()
+        parsed = urlsplit(text)
+        if parsed.scheme in ("http", "https"):
+            resolved = self._resolve_http_url(parsed)
+            self.resolved_http_url = resolved
+            host = urlsplit(resolved).hostname
+            if host and not host.lower().endswith(".local"):
+                self.resolved_ip = host
+            elif host:
+                self.resolved_ip = self._resolve_local_hostname(host)
+            return HttpCameraReader(resolved)
+
         return cv2.VideoCapture(source)
 
     def _capture_loop(self):
@@ -195,6 +454,8 @@ class VideoSource:
                     if self._cap is cap and self._cap is not None:
                         self._cap.release()
                         self._cap = None
+                    if time.time() - self._last_frame_time > 2.0:
+                        self._is_connected = False
                 self._sleep_backoff()
                 continue
 
@@ -204,8 +465,15 @@ class VideoSource:
                 if generation != self._generation:
                     continue
                 self._frame = frame
+                self._last_frame_time = time.time()
+                self._is_connected = True
                 self._seq += 1
                 self._cond.notify_all()
+
+    def is_healthy(self, timeout=2.5) -> bool:
+        """True jika frame kamera berhasil dibaca dalam `timeout` detik terakhir."""
+        with self._cond:
+            return self._running and (time.time() - self._last_frame_time < timeout)
 
     def _sleep_backoff(self):
         delay = self._backoff

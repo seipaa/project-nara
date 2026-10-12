@@ -368,3 +368,18 @@ class FocusPredictor:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 255, 200) if label == 0 else (200, 200, 255), 1)
         cv2.putText(frame, f"Info: {reason}", (20, 78),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.40, (230, 230, 230), 1)
+
+    def is_face_present(self) -> bool:
+        """Mengembalikan True jika wajah siswa aktif terdeteksi di depan kamera."""
+        if not getattr(self, "has_detected_face_ever", False):
+            return False
+        absent_start = getattr(self, "absent_start_time", None)
+        if absent_start is not None:
+            if (time.time() - absent_start) >= 1.0:
+                return False
+        telem = self.latest_prediction.get("telemetry", {}) or {}
+        reason = telem.get("reason", "")
+        if "Wajah Tidak Terdeteksi" in reason or "Wajah Belum Terdeteksi" in reason:
+            return False
+        return True
+

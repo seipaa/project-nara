@@ -22,6 +22,7 @@ import logging
 import os
 import sys
 import time
+import uuid
 from typing import List, Optional
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
@@ -44,6 +45,17 @@ from esp_bridge import EspBridge
 from focus_predictor import FocusPredictor
 from pomodoro_service import PomodoroService
 from settings_store import SettingsStore
+from voice_alert_service import (
+    NARA_ALERT_CONFIRM_SEC,
+    NARA_ALERT_COOLDOWN_SEC,
+    NARA_ALERT_ENABLED,
+    NARA_ALERT_LANGUAGE,
+    Esp32VoiceAlertClient,
+    VoiceAlertGate,
+    get_language_folder,
+    get_track_filename,
+    set_alert_language,
+)
 
 logger = logging.getLogger("nara")
 
@@ -67,6 +79,8 @@ pomodoro = None
 settings_store = None
 discovery = None
 bridge = None
+voice_alert_client = None
+voice_alert_gate = None
 connected_websockets: List[WebSocket] = []
 current_frame_bytes = None
 last_prediction = None
@@ -100,6 +114,7 @@ def _active_webcam_index():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global video_source, predictor, pomodoro, settings_store, discovery, bridge
+    global voice_alert_client, voice_alert_gate
     global _telemetry_interval, _active_source, last_prediction
     settings_store = SettingsStore()
     _telemetry_interval = float(os.getenv("TELEMETRY_INTERVAL_SEC", "1.0"))
@@ -107,15 +122,60 @@ async def lifespan(app: FastAPI):
     _active_source = source
     print(f"[STARTUP] Menginisialisasi Video Source [{source}], Focus Predictor & Pomodoro Service...")
     print(f"[STARTUP] Telemetry interval: {_telemetry_interval}s")
+    print(f"[STARTUP] Voice alert: enabled={NARA_ALERT_ENABLED} lang={NARA_ALERT_LANGUAGE}")
     discovery = DeviceDiscovery()
     discovery.start()
     video_source = VideoSource(source)
     predictor = FocusPredictor()
     pomodoro = PomodoroService()
+    voice_alert_gate = VoiceAlertGate()
+    voice_alert_client = Esp32VoiceAlertClient(video_source)
+    await voice_alert_client.start()
     bridge = EspBridge(pomodoro, settings_store)
     loop = asyncio.get_running_loop()
     bridge.bind_loop(loop)
     bridge.start()
+
+    def _on_pomodoro_audio_event(payload):
+        event = payload.get("event")
+        if not event or event not in ("BREAK", "ISTIRAHAT", "SESSION_END", "BREAK_END"):
+            return
+        track_file = get_track_filename(event)
+        lang_folder = get_language_folder(NARA_ALERT_LANGUAGE)
+        is_esp = isinstance(_active_source, str) and ("http" in _active_source or ":81" in _active_source)
+        reason_map = {
+            "BREAK": "Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!",
+            "ISTIRAHAT": "Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!",
+            "SESSION_END": "Sesi Pomodoro selesai — waktu belajar telah habis!",
+            "BREAK_END": "Waktu istirahat selesai — yuk lanjut belajar!",
+        }
+        reason = reason_map.get(event, "Pengumuman sesi Pomodoro.")
+
+        if is_esp and voice_alert_client is not None and loop is not None:
+            alert_payload = {
+                "event_id": f"{event}-{uuid.uuid4().hex[:12]}",
+                "code": event,
+                "language": NARA_ALERT_LANGUAGE,
+            }
+            asyncio.run_coroutine_threadsafe(voice_alert_client.send(alert_payload), loop)
+
+        if loop is not None:
+            asyncio.run_coroutine_threadsafe(
+                _broadcast({
+                    "type": "voice_alert",
+                    "alert": {
+                        "code": event,
+                        "reason": reason,
+                    },
+                    "track": track_file,
+                    "lang_folder": lang_folder,
+                    "sound_target": "esp32" if is_esp else "laptop",
+                }),
+                loop
+            )
+
+    pomodoro.add_listener(_on_pomodoro_audio_event)
+
     if isinstance(last_camera, dict) and last_camera.get("kind") == "esp" and last_camera.get("ip"):
         await bridge.attach(last_camera)
 
@@ -125,6 +185,8 @@ async def lifespan(app: FastAPI):
 
     worker_task.cancel()
     tick_task.cancel()
+    if voice_alert_client is not None:
+        await voice_alert_client.close()
     if bridge is not None:
         await bridge.close()
     if discovery is not None:
@@ -140,6 +202,9 @@ app = FastAPI(
 )
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+SUARA_DIR = os.path.join(ROOT_DIR, "suara")
+if os.path.exists(SUARA_DIR):
+    app.mount("/suara", StaticFiles(directory=SUARA_DIR), name="suara")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
@@ -199,10 +264,40 @@ def _fail():
     return JSONResponse({"ok": False, "error": GENERIC_ERROR}, status_code=500)
 
 
+_last_frame_received_ts = 0.0
+CAMERA_HEALTHY_TIMEOUT_SEC = 2.5
+
+
+def is_camera_healthy() -> bool:
+    """Periksa apakah kamera aktif dan menghasilkan frame dalam batas timeout."""
+    if video_source is None:
+        return False
+    if hasattr(video_source, "is_healthy"):
+        return video_source.is_healthy(timeout=CAMERA_HEALTHY_TIMEOUT_SEC)
+    return (time.time() - _last_frame_received_ts) < CAMERA_HEALTHY_TIMEOUT_SEC
+
+
+def is_face_detected() -> bool:
+    """Periksa apakah wajah siswa aktif terdeteksi di depan kamera."""
+    if predictor is not None and hasattr(predictor, "is_face_present"):
+        return predictor.is_face_present()
+    if last_prediction:
+        telem = last_prediction.get("telemetry", {}) or {}
+        reason = telem.get("reason", "")
+        if "Wajah Tidak Terdeteksi" in reason or "Wajah Belum Terdeteksi" in reason:
+            return False
+        return bool(telem.get("face_detected", True))
+    return True
+
+
 def _device_status():
-    if bridge is None:
-        return None
-    return bridge.public_status()
+    st = bridge.public_status() if bridge else {}
+    is_esp = isinstance(_active_source, str) and ("http" in _active_source or ":81" in _active_source)
+    st["sound_target"] = "esp32" if is_esp else "laptop"
+    st["active_source"] = _active_source
+    st["camera_healthy"] = is_camera_healthy()
+    st["face_detected"] = is_face_detected()
+    return st
 
 
 async def _broadcast(payload):
@@ -233,20 +328,46 @@ async def video_processing_worker():
                 await asyncio.sleep(0.05)
                 continue
 
+            _last_frame_received_ts = time.time()
+
             mode = pomodoro.mode
             if mode in ("BREAK", "LONG_BREAK"):
                 await asyncio.sleep(0.2)
                 continue
 
+            now = time.time()
             annotated_frame, prediction_data = await asyncio.to_thread(predictor.process_frame, frame)
             last_prediction = prediction_data
             pomodoro_data = await asyncio.to_thread(pomodoro.update_telemetry, prediction_data)
+
+            # Voice alert: Terkonfirmasi ML saat belajar (non-blocking)
+            if (
+                NARA_ALERT_ENABLED
+                and voice_alert_gate is not None
+                and voice_alert_client is not None
+                and pomodoro is not None
+                and pomodoro.mode == "STUDY"
+                and pomodoro.is_running
+            ):
+                alert_payload = voice_alert_gate.evaluate(prediction_data, now=now)
+                if alert_payload:
+                    is_esp = isinstance(_active_source, str) and ("http" in _active_source or ":81" in _active_source)
+                    if is_esp:
+                        asyncio.create_task(voice_alert_client.send(alert_payload))
+                    track_file = get_track_filename(alert_payload.get("code", ""))
+                    lang_folder = get_language_folder(alert_payload.get("language", "id"))
+                    await _broadcast({
+                        "type": "voice_alert",
+                        "alert": alert_payload,
+                        "track": track_file,
+                        "lang_folder": lang_folder,
+                        "sound_target": "esp32" if is_esp else "laptop",
+                    })
 
             ret, buffer = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
             if ret:
                 current_frame_bytes = buffer.tobytes()
 
-            now = time.time()
             if now - last_telemetry_time >= _telemetry_interval:
                 last_telemetry_time = now
                 await _broadcast({
@@ -272,12 +393,38 @@ async def pomodoro_tick_loop():
             if pomodoro is None:
                 await asyncio.sleep(1.0)
                 continue
-            status = await asyncio.to_thread(pomodoro.tick)
+
+            cam_healthy = is_camera_healthy()
+            face_detected = is_face_detected()
+            status = await asyncio.to_thread(
+                pomodoro.tick,
+                camera_connected=cam_healthy,
+                face_detected=face_detected
+            )
+
+            # Jika mode STUDY dan kamera mati, kirim telemetry kamera mati
+            if pomodoro.mode == "STUDY" and not cam_healthy:
+                pred_to_broadcast = {
+                    "label": 1,
+                    "is_ready": False,
+                    "focus_score": 0,
+                    "telemetry": {
+                        "face_detected": False,
+                        "reason": "Kamera tidak terdeteksi",
+                    }
+                }
+            else:
+                pred_to_broadcast = last_prediction
+
+            dev_st = _device_status()
+            dev_st["camera_healthy"] = cam_healthy
+            dev_st["face_detected"] = face_detected
+
             await _broadcast({
                 "timestamp": time.time(),
-                "prediction": last_prediction,
+                "prediction": pred_to_broadcast,
                 "pomodoro": status,
-                "device": _device_status(),
+                "device": dev_st,
             })
             await asyncio.sleep(1.0)
         except asyncio.CancelledError:
@@ -355,6 +502,17 @@ async def websocket_endpoint(websocket: WebSocket):
 async def api_pomodoro_start(mode: str = "STUDY", subject: Optional[str] = None):
     try:
         status = await asyncio.to_thread(pomodoro.start, mode, subject)
+        cam_healthy = is_camera_healthy()
+        face_detected = is_face_detected()
+        if pomodoro.mode == "STUDY":
+            if not cam_healthy:
+                status["camera_connected"] = False
+                status["is_auto_paused"] = True
+                status["auto_paused_reason"] = "CAMERA_DISCONNECTED"
+            elif not face_detected:
+                status["face_detected"] = False
+                status["is_auto_paused"] = True
+                status["auto_paused_reason"] = "FACE_NOT_DETECTED"
         return JSONResponse(status)
     except Exception:
         logger.exception("start pomodoro")
@@ -373,7 +531,19 @@ async def api_pomodoro_pause():
 @app.post("/api/pomodoro/resume")
 async def api_pomodoro_resume():
     try:
-        return JSONResponse(await asyncio.to_thread(pomodoro.resume))
+        status = await asyncio.to_thread(pomodoro.resume)
+        cam_healthy = is_camera_healthy()
+        face_detected = is_face_detected()
+        if pomodoro.mode == "STUDY":
+            if not cam_healthy:
+                status["camera_connected"] = False
+                status["is_auto_paused"] = True
+                status["auto_paused_reason"] = "CAMERA_DISCONNECTED"
+            elif not face_detected:
+                status["face_detected"] = False
+                status["is_auto_paused"] = True
+                status["auto_paused_reason"] = "FACE_NOT_DETECTED"
+        return JSONResponse(status)
     except Exception:
         logger.exception("resume pomodoro")
         return _fail()
@@ -461,6 +631,31 @@ def _audio_fields():
     }
 
 
+
+@app.post("/api/settings/audio")
+async def api_settings_audio(request: Request):
+    """Menyimpan pengaturan bahasa dan volume suara (onboarding / modal)."""
+    try:
+        body = await request.json()
+        lang = str(body.get("language") or "id").strip().lower()
+        if lang not in ("id", "en"):
+            lang = "id"
+        vol = int(body.get("volume", 20))
+        vol = max(0, min(30, vol))
+        enabled = bool(body.get("audio_enabled", True))
+        if settings_store is not None:
+            settings_store.set_audio(language=lang, volume=vol, enabled=enabled)
+        if bridge is not None:
+            bridge.language = lang
+            bridge.volume = vol
+            bridge.audio_enabled = enabled
+        set_alert_language(lang)
+        return JSONResponse({"ok": True, "language": lang, "volume": vol, "audio_enabled": enabled})
+    except Exception:
+        logger.exception("set audio settings")
+        return JSONResponse({"ok": False, "error": GENERIC_ERROR}, status_code=400)
+
+
 @app.get("/api/cameras")
 async def api_cameras():
     """Webcam lokal 0-3 plus ESP yang ditemukan di jaringan."""
@@ -477,8 +672,8 @@ async def api_cameras():
                 row = dict(cam)
                 if active is not None and row.get("index") == active:
                     row["available"] = True
-                items.append(row)
-        cameras = list(items)
+        # Hanya sertakan webcam lokal yang terdeteksi / tersedia
+        cameras = [c for c in items if c.get("available")]
         if discovery is not None:
             for dev in discovery.list_devices():
                 cameras.append({
@@ -521,6 +716,8 @@ async def api_camera_select(request: Request):
             _active_source = source
             if bridge is not None:
                 bridge.clear_device()
+            if voice_alert_client is not None:
+                voice_alert_client.camera_ip = None
             record = {"id": camera_id, "kind": "webcam", "source": source, "index": index}
             _remember_camera(record)
             return JSONResponse({"ok": True, "camera": record, "device": _device_status()})
@@ -533,6 +730,8 @@ async def api_camera_select(request: Request):
             _active_source = device["stream_url"]
             if bridge is not None:
                 await bridge.attach(device)
+            if voice_alert_client is not None:
+                voice_alert_client.camera_ip = device.get("ip")
             record = {
                 "id": camera_id,
                 "kind": "esp",
@@ -611,6 +810,8 @@ async def api_audio_config(request: Request):
             enabled = body.get("audio_enabled")
         if language is not None and language not in ("id", "en"):
             return JSONResponse({"ok": False, "error": "Bahasa tidak dikenal."}, status_code=400)
+        if language:
+            set_alert_language(language)
         status = await bridge.configure(language=language, volume=volume, enabled=enabled)
         return JSONResponse({"ok": True, "device": status})
     except Exception:
@@ -633,14 +834,27 @@ async def api_audio_test():
 @app.get("/api/config")
 async def api_get_config():
     """Mengambil konfigurasi sistem saat ini."""
+    camera_ip = None
+    alert_url = None
+    if video_source is not None:
+        camera_ip = getattr(video_source, "resolved_ip", None)
+    if voice_alert_client is not None:
+        camera_ip = voice_alert_client.camera_ip or camera_ip
+        alert_url = voice_alert_client.alert_url()
     body = {
         "camera_source": _active_source,
         "telemetry_interval_sec": _telemetry_interval,
-        "study_minutes": pomodoro.study_duration // 60,
-        "break_minutes": pomodoro.break_duration // 60,
-        "long_break_minutes": pomodoro.long_break_duration // 60,
+        "study_minutes": pomodoro.study_duration // 60 if pomodoro else 25,
+        "break_minutes": pomodoro.break_duration // 60 if pomodoro else 5,
+        "long_break_minutes": pomodoro.long_break_duration // 60 if pomodoro else 15,
         "selected_id": _selected_id(),
         "device": _device_status(),
+        "voice_alert_enabled": NARA_ALERT_ENABLED,
+        "voice_alert_language": NARA_ALERT_LANGUAGE,
+        "voice_alert_confirm_sec": NARA_ALERT_CONFIRM_SEC,
+        "voice_alert_cooldown_sec": NARA_ALERT_COOLDOWN_SEC,
+        "camera_ip": camera_ip,
+        "voice_alert_url": alert_url,
     }
     body.update(_audio_fields())
     return JSONResponse(body)
