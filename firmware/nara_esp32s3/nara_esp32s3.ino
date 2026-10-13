@@ -176,8 +176,8 @@ static bool pairingOpen() {
 }
 
 static int folderForLang(const char *value) {
-  if (strcmp(value, "id") == 0) return 1;
-  if (strcmp(value, "en") == 0) return 2;
+  if (strcmp(value, "en") == 0) return 1;
+  if (strcmp(value, "id") == 0) return 2;
   return 0;
 }
 
@@ -352,7 +352,7 @@ static void handlePlay() {
     return;
 #endif
   }
-  // folder 1 = /01 (Indonesia), folder 2 = /02 (English)
+  // folder 1 = /01 (English), folder 2 = /02 (Indonesia)
   // track 1..4 = 001.mp3 .. 004.mp3
   player.playFolder((uint8_t)folder, (uint8_t)track);
   snprintf(lastEvent, sizeof(lastEvent), "%s", eventIn);

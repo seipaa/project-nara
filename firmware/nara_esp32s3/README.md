@@ -228,7 +228,7 @@ Firewall laptop perlu mengizinkan mDNS (UDP 5353) dan UDP 4210. Kalau klien di j
 
 ## Empat event suara
 
-Folder `/01` = bahasa `id`, folder `/02` = bahasa `en`. Track dipanggil lewat `playFolder(folder, track)`.
+Folder `/01` = bahasa `en` (English), folder `/02` = bahasa `id` (Indonesia). Track dipanggil lewat `playFolder(folder, track)`.
 
 | Event | Kapan dikirim server | File |
 | --- | --- | --- |
@@ -382,11 +382,11 @@ Kalau pin 5V board tersambung langsung ke VBUS USB, jangan mencampur USB dan 5V 
 Format FAT32. Nama file harus tiga digit, sesuai yang diminta DFPlayer.
 
 ```
-/01/001.mp3   UNFOCUSED (001_not_focus.mp3)       Indonesia
+/01/001.mp3   UNFOCUSED (001_not_focus.mp3)       English
 /01/002.mp3   SESSION_END (002_waktu_habis.mp3)
 /01/003.mp3   BREAK / BREAK_END (003_istirahat.mp3)
 /01/004.mp3   SESSION_START (004_mulai.mp3)
-/02/001.mp3   UNFOCUSED (001_not_focus.mp3)       English
+/02/001.mp3   UNFOCUSED (001_not_focus.mp3)       Indonesia
 /02/002.mp3   SESSION_END (002_waktu_habis.mp3)
 /02/003.mp3   BREAK / BREAK_END (003_istirahat.mp3)
 /02/004.mp3   SESSION_START (004_mulai.mp3)

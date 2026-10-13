@@ -25,16 +25,16 @@ Format MicroSD: **FAT32**. Buat folder bernama `01` dan `02` di root MicroSD:
 
 ```text
 MicroSD Root
-├── 01/                  <-- Bahasa Indonesia
-│   ├── 001.mp3          (atau 001_not_focus.mp3) -> Peringatan tidak fokus / mengantuk
-│   ├── 002.mp3          (atau 002_waktu_habis.mp3) -> Sesi belajar selesai
-│   ├── 003.mp3          (atau 003_istirahat.mp3) -> Waktu istirahat
-│   └── 004.mp3          (atau 004_mulai.mp3) -> Memulai sesi belajar Pomodoro
-└── 02/                  <-- Bahasa Inggris
-    ├── 001.mp3          -> Focus alert
-    ├── 002.mp3          -> Session ended
-    ├── 003.mp3          -> Break time
-    └── 004.mp3          -> Session start
+├── 01/                  <-- Bahasa Inggris (English)
+│   ├── 001.mp3          -> Focus alert (001_not_focus.mp3)
+│   ├── 002.mp3          -> Session ended (002_waktu_habis.mp3)
+│   ├── 003.mp3          -> Break time (003_istirahat.mp3)
+│   └── 004.mp3          -> Session start (004_mulai.mp3)
+└── 02/                  <-- Bahasa Indonesia
+    ├── 001.mp3          (atau 001_not_focus.mp3) -> Peringatan tidak fokus / mengantuk
+    ├── 002.mp3          (atau 002_waktu_habis.mp3) -> Sesi belajar selesai
+    ├── 003.mp3          (atau 003_istirahat.mp3) -> Waktu istirahat
+    └── 004.mp3          (atau 004_mulai.mp3) -> Memulai sesi belajar Pomodoro
 ```
 
 ---

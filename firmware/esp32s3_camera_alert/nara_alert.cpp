@@ -74,9 +74,9 @@ static void toLowerInPlace(char *s) {
 }
 
 static bool mapAlertTrack(const char *code, const char *language, uint8_t *folder, uint8_t *file) {
-  if (strcmp(language, "id") == 0) {
+  if (strcmp(language, "en") == 0) {
     *folder = 1;
-  } else if (strcmp(language, "en") == 0) {
+  } else if (strcmp(language, "id") == 0) {
     *folder = 2;
   } else {
     return false;

@@ -61,7 +61,8 @@ def get_track_filename(code: str) -> str:
 
 def get_language_folder(lang: Optional[str] = None) -> str:
     use_lang = (lang or NARA_ALERT_LANGUAGE).strip().lower()
-    return "02" if use_lang == "en" else "01"
+    # Folder 01 = English (en), Folder 02 = Bahasa Indonesia (id)
+    return "01" if use_lang == "en" else "02"
 
 
 def classify_ml_event(prediction_data: Optional[Dict[str, Any]]) -> Optional[str]:

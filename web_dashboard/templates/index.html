@@ -2844,7 +2844,7 @@
     function playAlertAudio(track, langFolder) {
       if ($('audioOn') && !$('audioOn').checked) return;
       const lang = currentLang();
-      const folder = langFolder || (lang === 'en' ? '02' : '01');
+      const folder = langFolder || (lang === 'en' ? '01' : '02');
       let filename = track || '001_not_focus.mp3';
       if (TRACK_FILES[filename]) {
         filename = TRACK_FILES[filename];
@@ -2909,7 +2909,7 @@
       const isEsp = isEspCameraSelected();
       const soundTarget = isEsp ? 'esp32' : 'laptop';
       const lang = currentLang();
-      const folder = lang === 'en' ? '02' : '01';
+      const folder = lang === 'en' ? '01' : '02';
       if (!isEsp) {
         playAlertAudio('004_mulai.mp3', folder);
       }
@@ -2923,7 +2923,7 @@
       const isEsp = isEspCameraSelected();
       const soundTarget = isEsp ? 'esp32' : 'laptop';
       const lang = currentLang();
-      const folder = lang === 'en' ? '02' : '01';
+      const folder = lang === 'en' ? '01' : '02';
       if (!isEsp) {
         playAlertAudio('003_istirahat.mp3', folder);
       }
@@ -3055,7 +3055,7 @@
       const isEsp = isEspCameraSelected();
       if (!isEsp) {
         $('audioStatus').textContent = 'Memutar tes suara di speaker laptop...';
-        const langF = currentLang() === 'en' ? '02' : '01';
+        const langF = currentLang() === 'en' ? '01' : '02';
         playAlertAudio('001_not_focus.mp3', langF);
         showVoiceToast('001', 'Tes suara diputar di speaker laptop', 'laptop');
         setTimeout(() => {

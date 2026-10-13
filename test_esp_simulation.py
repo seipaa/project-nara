@@ -85,7 +85,7 @@ def test_esp_mock_worker_lifecycle_and_endpoints():
             play_data = resp_play.json()
             print("POST /play (SESSION_START):", play_data)
             assert play_data["track"] == 4
-            assert play_data["folder"] == 1
+            assert play_data["folder"] == 2
 
             # 6. Test POST /play for UNFOCUSED (Track 1)
             resp_play1 = client.post(

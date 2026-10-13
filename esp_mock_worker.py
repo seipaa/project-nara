@@ -300,7 +300,7 @@ class FrameGenerator:
 class DfPlayerSimulator:
     """
     Menyimulasikan modul audio serial DFPlayer Mini dengan kartu SD.
-    Mendukung folder /01 (id) dan /02 (en) dengan track 1..4.
+    Mendukung folder /01 (en) dan /02 (id) dengan track 1..4.
     """
 
     TRACK_MAP = {
@@ -536,7 +536,7 @@ class MockControlHandler(BaseHTTPRequestHandler):
                 return
             lang = body.get("lang", "id")
             event = body.get("event", "")
-            folder = 2 if str(lang).lower() == "en" else 1
+            folder = 1 if str(lang).lower() == "en" else 2
             track = worker.dfplayer.map_event_to_track(event)
             if track == 0:
                 self._send_json(400, {"error": "bad_event"})
@@ -571,7 +571,7 @@ class MockControlHandler(BaseHTTPRequestHandler):
             self._send_json(409, {"ok": False, "error": "duplicate_event_id"})
             return
 
-        folder = 2 if language == "en" else 1
+        folder = 1 if language == "en" else 2
         track = worker.dfplayer.map_event_to_track(code)
         if track == 0:
             self._send_json(400, {"ok": False, "error": "unsupported_code_or_language"})
@@ -717,7 +717,7 @@ class MockAlertHandler(BaseHTTPRequestHandler):
             self._send_json(409, {"ok": False, "error": "duplicate_event_id"})
             return
 
-        folder = 2 if language == "en" else 1
+        folder = 1 if language == "en" else 2
         track = worker.dfplayer.map_event_to_track(code)
         if track == 0:
             self._send_json(400, {"ok": False, "error": "unsupported_code_or_language"})
