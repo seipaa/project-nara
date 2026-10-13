@@ -64,6 +64,9 @@ project-nara/
 ├── .env                        # Konfigurasi aktif lokal (opsional)
 ├── Bahan_Kajian_Presentasi.docx# Dokumen bahan kajian & referensi presentasi
 ├── README.md                   # Dokumentasi panduan proyek lengkap
+├── suara/                      # File audio notifikasi suara bilingual (id: 01, en: 02)
+│   ├── 01/                     # Bahasa Indonesia (001: tidak fokus, 002: waktu habis, 003: istirahat, 004: mulai)
+│   └── 02/                     # Bahasa Inggris
 ├── models/                     # Model Terlatih & Artefak Evaluasi Machine Learning
 │   ├── focus_svm_model.joblib  # Model SVM RBF Terlatih
 │   ├── feature_scaler.joblib   # Fitted StandardScaler untuk normalisasi 20 fitur
@@ -146,6 +149,21 @@ Pin, pairing, dan kontrak HTTP/UDP perangkat ada di [`firmware/nara_esp32s3/READ
 Buka peramban di: **`http://127.0.0.1:8000`**
 
 ---
+
+### 5. Simulasi Perangkat ESP32-S3 (ESP Mock Worker)
+
+Jika Anda ingin menguji sistem secara lengkap tanpa menghubungkan board fisik ESP32-S3-CAM:
+```bash
+python esp_mock_worker.py
+```
+Worker simulasi ini otomatis meniru hardware fisik secara utuh:
+- **Port 80**: HTTP Kontrol & Info (`/info`, `/status`, `/pair`, `/play`, `/volume`, `/capture`)
+- **Port 81**: MJPEG video stream (`/stream`) dengan mode webcam lokal atau sintetis siswa belajar
+- **Port 82**: REST API Voice alert (`/api/alert`)
+- **Port 4210**: UDP broadcast responder (`NARA_DISCOVER`)
+- **mDNS**: Penyiaran otomatis `_nara._tcp.local.`
+
+Setelah worker dijalankan di terminal terpisah, kamera **NARA Cam Simulator** akan otomatis terdeteksi di dashboard NARA.
 
 ## Pipeline Machine Learning & Data Collection
 

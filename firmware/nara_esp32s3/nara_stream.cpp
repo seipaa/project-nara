@@ -89,6 +89,15 @@ bool naraStartMjpegServer(uint16_t port, bool cameraReady) {
     return false;
   }
   httpd_register_uri_handler(handle, &streamUri);
-  Serial.printf("[cam] MJPEG port %u path /stream\n", (unsigned)port);
+
+  httpd_uri_t rootUri = streamUri;
+  rootUri.uri = "/";
+  httpd_register_uri_handler(handle, &rootUri);
+
+  httpd_uri_t mjpegUri = streamUri;
+  mjpegUri.uri = "/stream.mjpeg";
+  httpd_register_uri_handler(handle, &mjpegUri);
+
+  Serial.printf("[cam] MJPEG port %u path /stream dan /\n", (unsigned)port);
   return true;
 }

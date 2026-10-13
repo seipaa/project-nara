@@ -2270,6 +2270,7 @@
       const cls = 'pane timer' + (uiMode === 'istirahat' ? ' brk' : '');
       $('ringcard').className = cls;
       const freshStudy = uiMode === 'belajar' && S.mode === 'istirahat';
+      const isNewStudy = uiMode === 'belajar' && S.mode !== 'belajar';
       const freshBreak = uiMode === 'istirahat' && S.mode !== 'istirahat';
       S.mode = uiMode;
       S.serverMode = serverMode;
@@ -2290,6 +2291,9 @@
       } else {
         camOn();
         $('skip').textContent = 'Lewati sesi ini';
+        if (isNewStudy) {
+          triggerSessionStartAudio();
+        }
       }
       show(uiMode);
     }
@@ -2400,6 +2404,10 @@
     }
 
     $('start').onclick = () => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === 'suspended') ctx.resume();
+      } catch (_) {}
       const mapelEl = $('mapel');
       if (mapelEl && !mapelEl.value) {
         mapelEl.focus();
@@ -2764,17 +2772,24 @@
       '001': '001_not_focus.mp3',
       '002': '002_waktu_habis.mp3',
       '003': '003_istirahat.mp3',
+      '004': '004_mulai.mp3',
       1: '001_not_focus.mp3',
       2: '002_waktu_habis.mp3',
       3: '003_istirahat.mp3',
+      4: '004_mulai.mp3',
       'NOT_FOCUSED': '001_not_focus.mp3',
       'SLEEPING': '001_not_focus.mp3',
       'YAWNING': '001_not_focus.mp3',
       'FACE_ABSENT': '001_not_focus.mp3',
+      'UNFOCUSED': '001_not_focus.mp3',
       'WAKTU_HABIS': '002_waktu_habis.mp3',
       'SESSION_END': '002_waktu_habis.mp3',
       'ISTIRAHAT': '003_istirahat.mp3',
-      'BREAK': '003_istirahat.mp3'
+      'BREAK': '003_istirahat.mp3',
+      'BREAK_END': '003_istirahat.mp3',
+      'SESSION_START': '004_mulai.mp3',
+      'MULAI': '004_mulai.mp3',
+      'START': '004_mulai.mp3'
     };
 
     let _activeAudio = null;
@@ -2786,9 +2801,9 @@
       let filename = track || '001_not_focus.mp3';
       if (TRACK_FILES[filename]) {
         filename = TRACK_FILES[filename];
-      } else if (!String(filename).endsWith('.mp3')) {
+      } else if (!String(filename).endsWith('.mp3') && !String(filename).endsWith('.mpeg')) {
         const codeKey = String(filename).padStart(3, '0');
-        filename = TRACK_FILES[codeKey] || '001_not_focus.mp3';
+        filename = TRACK_FILES[codeKey] || TRACK_FILES[filename] || '001_not_focus.mp3';
       }
 
       const audioSrc = `/suara/${folder}/${filename}`;
@@ -2812,19 +2827,39 @@
 
     let _voiceToastTimer = null;
     let _lastBreakAudioTs = 0;
+    let _lastStartAudioTs = 0;
     const VOICE_MESSAGES = {
       '001': 'Fokus berkurang — yuk kembali perhatikan materi!',
       '002': 'Sesi Pomodoro selesai — waktu belajar telah habis!',
       '003': 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!',
+      '004': 'Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!',
       'NOT_FOCUSED': 'Fokus berkurang — yuk kembali perhatikan materi!',
       'SLEEPING': 'Terdeteksi mengantuk / mata lelah — segarkan mata sejenak!',
       'YAWNING': 'Menguap terdeteksi — tarik napas dalam dan tetap fokus!',
       'FACE_ABSENT': 'Wajah tidak terdeteksi di depan kamera.',
       'BREAK': 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!',
       'ISTIRAHAT': 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!',
+      'BREAK_END': 'Waktu istirahat selesai — yuk lanjut belajar!',
       'SESSION_END': 'Sesi Pomodoro selesai — waktu belajar telah habis!',
+      'SESSION_START': 'Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!',
+      'MULAI': 'Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!',
+      'START': 'Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!',
       'welcome': 'Asisten suara NARA siap mendampingi belajarmu.'
     };
+
+    function triggerSessionStartAudio() {
+      const now = Date.now();
+      if (now - _lastStartAudioTs < 3000) return;
+      _lastStartAudioTs = now;
+      const isEsp = isEspCameraSelected();
+      const soundTarget = isEsp ? 'esp32' : 'laptop';
+      const lang = currentLang();
+      const folder = lang === 'en' ? '02' : '01';
+      if (!isEsp) {
+        playAlertAudio('004_mulai.mp3', folder);
+      }
+      showVoiceToast('004', 'Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!', soundTarget);
+    }
 
     function triggerBreakAudio() {
       const now = Date.now();
@@ -2871,6 +2906,11 @@
         const now = Date.now();
         if (now - _lastBreakAudioTs < 3000) return;
         _lastBreakAudioTs = now;
+      }
+      if (code === 'SESSION_START' || code === 'MULAI' || code === 'START' || String(data.track).includes('004')) {
+        const now = Date.now();
+        if (now - _lastStartAudioTs < 3000) return;
+        _lastStartAudioTs = now;
       }
 
       if (soundTarget === 'laptop') {

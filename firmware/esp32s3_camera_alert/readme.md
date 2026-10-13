@@ -28,11 +28,13 @@ MicroSD Root
 ├── 01/                  <-- Bahasa Indonesia
 │   ├── 001.mp3          (atau 001_not_focus.mp3) -> Peringatan tidak fokus / mengantuk
 │   ├── 002.mp3          (atau 002_waktu_habis.mp3) -> Sesi belajar selesai
-│   └── 003.mp3          (atau 003_istirahat.mp3) -> Waktu istirahat
+│   ├── 003.mp3          (atau 003_istirahat.mp3) -> Waktu istirahat
+│   └── 004.mp3          (atau 004_mulai.mp3) -> Memulai sesi belajar Pomodoro
 └── 02/                  <-- Bahasa Inggris
     ├── 001.mp3          -> Focus alert
     ├── 002.mp3          -> Session ended
-    └── 003.mp3          -> Break time
+    ├── 003.mp3          -> Break time
+    └── 004.mp3          -> Session start
 ```
 
 ---

@@ -138,12 +138,15 @@ async def lifespan(app: FastAPI):
 
     def _on_pomodoro_audio_event(payload):
         event = payload.get("event")
-        if not event or event not in ("BREAK", "ISTIRAHAT", "SESSION_END", "BREAK_END"):
+        if not event or event not in ("BREAK", "ISTIRAHAT", "SESSION_END", "BREAK_END", "SESSION_START", "MULAI", "START"):
             return
         track_file = get_track_filename(event)
         lang_folder = get_language_folder(NARA_ALERT_LANGUAGE)
         is_esp = isinstance(_active_source, str) and ("http" in _active_source or ":81" in _active_source)
         reason_map = {
+            "SESSION_START": "Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!",
+            "MULAI": "Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!",
+            "START": "Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!",
             "BREAK": "Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!",
             "ISTIRAHAT": "Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!",
             "SESSION_END": "Sesi Pomodoro selesai — waktu belajar telah habis!",

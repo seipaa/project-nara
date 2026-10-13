@@ -1,11 +1,14 @@
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <WiFiUdp.h>
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
 #include "FS.h"      // Tambahan library SD Card
 #include "SD_MMC.h"  // Tambahan library SD Card
 #include <array>
 #include <string.h>
+
+static WiFiUDP udpDiscovery;
 
 
 // own libraries from tab
@@ -226,9 +229,16 @@ void setup() {
       MDNS.addService("http", "tcp", 80);
       MDNS.addService("http", "tcp", 81);
       MDNS.addService("http", "tcp", NARA_ALERT_HTTP_PORT);
+      MDNS.addService("nara", "tcp", 80);
+      MDNS.addServiceTxt("nara", "tcp", "id", "nara-camera");
+      MDNS.addServiceTxt("nara", "tcp", "stream_port", "81");
+      MDNS.addServiceTxt("nara", "tcp", "alert_port", "82");
+      MDNS.addServiceTxt("nara", "tcp", "fw", "1.0.0");
+      MDNS.addServiceTxt("nara", "tcp", "paired", "1");
       Serial.println("[NARA-MDNS] BERHASIL: http://nara-camera.local:81/stream");
       Serial.println("[NARA-MDNS] Snapshot: http://nara-camera.local/capture");
       Serial.println("[NARA-MDNS] Alert: http://nara-camera.local:82/api/alert");
+      Serial.println("[NARA-MDNS] Service: _nara._tcp.local port 80");
     } else {
       Serial.println("[NARA-MDNS] GAGAL memulai nara-camera.local");
     }
@@ -250,14 +260,15 @@ void setup() {
     Serial.println("GAGAL: SD Card tidak terdeteksi!");
   } else {
     Serial.println("MANTAP: SD Card berhasil dipasang!");
-    // // uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
-    // Serial.printf("Ukuran SD Card: %llu MB\n", cardSize);
   }
   // ========================================== 
 
   startCameraServer();
   initNaraVoiceAlert();
   startNaraAlertServer();
+
+  udpDiscovery.begin(4210);
+  Serial.println("[NARA-CAMERA] Discovery UDP: listening on port 4210");
 
   Serial.print("[NARA-CAMERA] Camera Ready: http://");
   Serial.print(WiFi.localIP());
@@ -267,6 +278,23 @@ void setup() {
 }
 
 void loop() {
-  // Do nothing. Everything is done in another task by the web server
-  vTaskDelay(pdMS_TO_TICKS(5000));
+  int packetSize = udpDiscovery.parsePacket();
+  if (packetSize > 0) {
+    char buf[64] = {0};
+    int len = udpDiscovery.read(buf, sizeof(buf) - 1);
+    if (len > 0) {
+      buf[len] = '\0';
+      if (strstr(buf, "NARA_DISCOVER")) {
+        char reply[260];
+        snprintf(reply, sizeof(reply),
+          "{\"id\":\"nara-camera\",\"name\":\"NARA Camera (ESP32-S3)\",\"ip\":\"%s\",\"stream_port\":81,\"alert_port\":82,\"http_port\":80,\"paired\":true,\"fw\":\"1.0.0\"}",
+          WiFi.localIP().toString().c_str()
+        );
+        udpDiscovery.beginPacket(udpDiscovery.remoteIP(), udpDiscovery.remotePort());
+        udpDiscovery.write((const uint8_t*)reply, strlen(reply));
+        udpDiscovery.endPacket();
+      }
+    }
+  }
+  vTaskDelay(pdMS_TO_TICKS(100));
 }

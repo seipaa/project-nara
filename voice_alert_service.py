@@ -25,7 +25,19 @@ NARA_ALERT_ENABLED = os.getenv("NARA_ALERT_ENABLED", "1").strip() not in ("0", "
 NARA_ALERT_CONFIRM_SEC = float(os.getenv("NARA_ALERT_CONFIRM_SEC", "2.0"))
 NARA_ALERT_COOLDOWN_SEC = float(os.getenv("NARA_ALERT_COOLDOWN_SEC", "45.0"))
 
-VALID_CODES = ("SLEEPING", "FACE_ABSENT", "YAWNING", "NOT_FOCUSED", "BREAK", "ISTIRAHAT", "SESSION_END", "WAKTU_HABIS")
+VALID_CODES = (
+    "SLEEPING",
+    "FACE_ABSENT",
+    "YAWNING",
+    "NOT_FOCUSED",
+    "BREAK",
+    "ISTIRAHAT",
+    "SESSION_END",
+    "WAKTU_HABIS",
+    "SESSION_START",
+    "MULAI",
+    "START",
+)
 VALID_LANGUAGES = ("id", "en")
 
 
@@ -38,6 +50,8 @@ def set_alert_language(lang: str) -> str:
 
 
 def get_track_filename(code: str) -> str:
+    if code in ("SESSION_START", "MULAI", "START"):
+        return "004_mulai.mp3"
     if code in ("SESSION_END", "WAKTU_HABIS", "TIME_UP"):
         return "002_waktu_habis.mp3"
     if code in ("BREAK_START", "BREAK_END", "ISTIRAHAT", "BREAK"):

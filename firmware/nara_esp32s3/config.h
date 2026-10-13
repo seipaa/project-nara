@@ -55,12 +55,60 @@
 #endif
 #define RESET_HOLD_MS 5000
 
-// Jendela pairing, dihitung sejak server kontrol hidup (WiFi sudah terhubung),
-// bukan selama captive portal masih terbuka.
-#define NARA_PAIR_WINDOW_MS 120000UL
+// =============================================================================
+// PENGATURAN KONEKSI WI-FI (PILIH SALAH SATU)
+// =============================================================================
+// Set 1: Koneksi langsung ke WiFi rumah / Hotspot HP (SANGAT MUDAH & CEPAT UNTUK DICOBA).
+//        Tinggal isi WIFI_SSID & WIFI_PASS di bawah, lalu flash ke ESP.
+// Set 0: Gunakan WiFiManager Captive Portal (ESP membuat Access Point "NARA-Setup-XXXX").
+#ifndef USE_DIRECT_WIFI
+#define USE_DIRECT_WIFI 1
+#endif
 
+#if USE_DIRECT_WIFI
+#ifndef WIFI_SSID
+#define WIFI_SSID "NAMA_WIFI_KAMU"
+#endif
+#ifndef WIFI_PASS
+#define WIFI_PASS "PASSWORD_WIFI_KAMU"
+#endif
+#endif
+
+// =============================================================================
+// IDENTITAS & HOSTNAME mDNS
+// =============================================================================
+// Jika 1: Hostname mDNS selalu "nara-camera.local" (langsung cocok dengan voice_alert_service).
+// Jika 0: Hostname menggunakan "nara-cam-XXXX" berdasarkan 4 digit MAC address.
+#ifndef NARA_USE_FIXED_HOSTNAME
+#define NARA_USE_FIXED_HOSTNAME 1
+#endif
+#define NARA_DEFAULT_HOSTNAME "nara-camera"
+
+// =============================================================================
+// TOLERANSI DFPLAYER & PENGUJIAN BENCH (TANPA MODUL MP3)
+// =============================================================================
+// Set 1: Jika modul DFPlayer Mini belum terpasang atau SD Card belum siap,
+//        firmware tetap merespons /play dan /api/alert dengan HTTP 200/202 (mock),
+//        dan menulis info ke Serial Monitor. Kamera dan Web App tetap lancar!
+// Set 0: Wajib modul DFPlayer fisik merespons ACK via UART.
+#ifndef NARA_TOLERANT_MP3
+#define NARA_TOLERANT_MP3 1
+#endif
+
+// =============================================================================
+// JENDELA PAIRING TOFU
+// =============================================================================
+// Set 1: Selalu izinkan pairing baru (sangat memudahkan saat testing aplikasi di laptop).
+// Set 0: Hanya izinkan pairing selama jendela NARA_PAIR_WINDOW_MS sejak boot.
+#ifndef NARA_ALWAYS_ALLOW_PAIR
+#define NARA_ALWAYS_ALLOW_PAIR 1
+#endif
+#define NARA_PAIR_WINDOW_MS 600000UL
+
+// Port server
 #define NARA_HTTP_PORT 80
 #define NARA_STREAM_PORT 81
+#define NARA_ALERT_PORT 82
 #define NARA_DISCOVERY_PORT 4210
 #define NARA_DISCOVERY_MAGIC "NARA_DISCOVER"
 #define NARA_TOKEN_HEADER "X-NARA-Token"

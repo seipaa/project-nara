@@ -102,6 +102,12 @@ static bool mapAlertTrack(const char *code, const char *language, uint8_t *folde
            strcmp(code, "ISTIRAHAT") == 0 ||
            strcmp(code, "BREAK") == 0) {
     *file = 3;
+  }
+  // Track 4: 004_mulai.mp3 (Memulai Sesi Pomodoro Belajar)
+  else if (strcmp(code, "SESSION_START") == 0 ||
+           strcmp(code, "MULAI") == 0 ||
+           strcmp(code, "START") == 0) {
+    *file = 4;
   } else {
     return false;
   }

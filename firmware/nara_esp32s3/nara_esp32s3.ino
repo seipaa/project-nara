@@ -42,6 +42,7 @@ using NaraDoc = StaticJsonDocument<512>;
 #endif
 
 static WebServer server(NARA_HTTP_PORT);
+static WebServer alertServer(NARA_ALERT_PORT);
 static WiFiUDP udp;
 static WiFiManager wifiManager;
 static Preferences prefs;
@@ -119,7 +120,11 @@ static void buildIdentity() {
   snprintf(suffix, sizeof(suffix), "%02x%02x", mac[4], mac[5]);
   snprintf(suffixUp, sizeof(suffixUp), "%02X%02X", mac[4], mac[5]);
   snprintf(deviceId, sizeof(deviceId), "nara-cam-%s", suffix);
+#if NARA_USE_FIXED_HOSTNAME
+  snprintf(hostname, sizeof(hostname), "%s", NARA_DEFAULT_HOSTNAME);
+#else
   snprintf(hostname, sizeof(hostname), "nara-cam-%s", suffix);
+#endif
   snprintf(apName, sizeof(apName), "NARA-Setup-%s", suffixUp);
   snprintf(deviceName, sizeof(deviceName), "NARA Cam %s", suffixUp);
 }
@@ -162,8 +167,12 @@ static bool authorized() {
 }
 
 static bool pairingOpen() {
+#if NARA_ALWAYS_ALLOW_PAIR
+  return true;
+#else
   if (isPaired() || !servicesStarted) return false;
   return (millis() - servicesStartedMs) < NARA_PAIR_WINDOW_MS;
+#endif
 }
 
 static int folderForLang(const char *value) {
@@ -173,10 +182,15 @@ static int folderForLang(const char *value) {
 }
 
 static int trackForEvent(const char *event) {
-  if (strcmp(event, "SESSION_START") == 0) return 1;
-  if (strcmp(event, "UNFOCUSED") == 0) return 2;
-  if (strcmp(event, "BREAK_END") == 0) return 3;
-  if (strcmp(event, "SESSION_END") == 0) return 4;
+  if (strcmp(event, "UNFOCUSED") == 0 || strcmp(event, "NOT_FOCUSED") == 0 ||
+      strcmp(event, "SLEEPING") == 0 || strcmp(event, "YAWNING") == 0 ||
+      strcmp(event, "FACE_ABSENT") == 0) return 1;
+  if (strcmp(event, "SESSION_END") == 0 || strcmp(event, "WAKTU_HABIS") == 0 ||
+      strcmp(event, "TIME_UP") == 0) return 2;
+  if (strcmp(event, "BREAK_END") == 0 || strcmp(event, "BREAK") == 0 ||
+      strcmp(event, "ISTIRAHAT") == 0 || strcmp(event, "BREAK_START") == 0) return 3;
+  if (strcmp(event, "SESSION_START") == 0 || strcmp(event, "MULAI") == 0 ||
+      strcmp(event, "START") == 0) return 4;
   return 0;
 }
 
@@ -321,8 +335,22 @@ static void handlePlay() {
   saveLang();
 
   if (!ensureMp3(false)) {
+#if NARA_TOLERANT_MP3
+    snprintf(lastEvent, sizeof(lastEvent), "%s", eventIn);
+    Serial.printf("[mp3] MOCK PLAY (DFPlayer offline/simulasi): folder %d track %d (%s)\n", folder, track, lastEvent);
+    NaraDoc out;
+    out["ok"] = true;
+    out["lang"] = lang;
+    out["event"] = lastEvent;
+    out["folder"] = folder;
+    out["track"] = track;
+    out["dfplayer"] = false;
+    sendDoc(200, out);
+    return;
+#else
     sendError(503, "mp3_unavailable");
     return;
+#endif
   }
   // folder 1 = /01 (Indonesia), folder 2 = /02 (English)
   // track 1..4 = 001.mp3 .. 004.mp3
@@ -336,6 +364,7 @@ static void handlePlay() {
   out["event"] = lastEvent;
   out["folder"] = folder;
   out["track"] = track;
+  out["dfplayer"] = true;
   sendDoc(200, out);
 }
 
@@ -362,17 +391,228 @@ static void handleVolume() {
   volume = (uint8_t)requested;
   saveVolume();
   if (!ensureMp3(false)) {
+#if NARA_TOLERANT_MP3
+    Serial.printf("[mp3] MOCK VOLUME (DFPlayer offline/simulasi): vol=%d\n", volume);
+    NaraDoc out;
+    out["ok"] = true;
+    out["volume"] = volume;
+    out["dfplayer"] = false;
+    sendDoc(200, out);
+    return;
+#else
     sendError(503, "mp3_unavailable");
     return;
+#endif
   }
   player.volume(volume);
   NaraDoc out;
   out["ok"] = true;
   out["volume"] = volume;
+  out["dfplayer"] = true;
   sendDoc(200, out);
 }
 
+static void handleCapture() {
+  if (!cameraReady) {
+    server.send(503, "text/plain", "camera_not_ready");
+    return;
+  }
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
+    server.send(500, "text/plain", "capture_failed");
+    return;
+  }
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  WiFiClient client = server.client();
+  server.setContentLength(fb->len);
+  server.send(200, "image/jpeg", "");
+  client.write(fb->buf, fb->len);
+  esp_camera_fb_return(fb);
+}
+
+static char seenAlertIds[16][48];
+static uint8_t seenAlertHead = 0;
+static uint8_t seenAlertCount = 0;
+
+static bool alertIdSeen(const char *event_id) {
+  if (!event_id || event_id[0] == '\0') return false;
+  for (uint8_t i = 0; i < seenAlertCount; ++i) {
+    if (strcmp(seenAlertIds[i], event_id) == 0) return true;
+  }
+  return false;
+}
+
+static void rememberAlertId(const char *event_id) {
+  if (!event_id || event_id[0] == '\0') return;
+  strncpy(seenAlertIds[seenAlertHead], event_id, sizeof(seenAlertIds[0]) - 1);
+  seenAlertIds[seenAlertHead][sizeof(seenAlertIds[0]) - 1] = '\0';
+  seenAlertHead = (seenAlertHead + 1) % 16;
+  if (seenAlertCount < 16) seenAlertCount++;
+}
+
+static void handleApiAlertOptions() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleApiAlertGet() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  NaraDoc doc;
+  doc["ok"] = true;
+  doc["dfplayer"] = mp3Ready;
+  doc["queue"] = 0;
+  doc["volume"] = volume;
+  doc["last_event"] = lastEvent;
+  sendDoc(200, doc);
+}
+
+static void handleApiAlert() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  NaraDoc doc;
+  if (!readBody(doc)) {
+    sendError(400, "bad_json");
+    return;
+  }
+  const char *eventId = doc["event_id"] | "";
+  const char *code = doc["code"] | "";
+  const char *language = doc["language"] | "";
+
+  if (eventId[0] == '\0' || code[0] == '\0' || language[0] == '\0') {
+    sendError(400, "missing_fields");
+    return;
+  }
+
+  if (alertIdSeen(eventId)) {
+    sendError(409, "duplicate_event_id");
+    return;
+  }
+  rememberAlertId(eventId);
+
+  int folder = folderForLang(language);
+  int track = trackForEvent(code);
+  if (folder == 0 || track == 0) {
+    sendError(400, "unsupported_code_or_language");
+    return;
+  }
+
+  snprintf(lang, sizeof(lang), "%s", language);
+  saveLang();
+
+  if (ensureMp3(false)) {
+    player.playFolder((uint8_t)folder, (uint8_t)track);
+    snprintf(lastEvent, sizeof(lastEvent), "%s", code);
+    Serial.printf("[alert:80] play folder %d track %d (%s) id=%s\n", folder, track, code, eventId);
+  } else {
+#if NARA_TOLERANT_MP3
+    snprintf(lastEvent, sizeof(lastEvent), "%s", code);
+    Serial.printf("[alert:80] MOCK PLAY (DFPlayer offline/simulasi): folder %d track %d (%s) id=%s\n", folder, track, code, eventId);
+#endif
+  }
+
+  NaraDoc out;
+  out["ok"] = true;
+  out["queued"] = true;
+  out["folder"] = folder;
+  out["file"] = track;
+  out["dfplayer"] = mp3Ready;
+  sendDoc(202, out);
+}
+
 static void handleNotFound() { sendError(404, "not_found"); }
+
+// -----------------------------------------------------------------------------
+// Handler Port 82 (Dedicated Alert Server untuk voice_alert_service.py)
+// -----------------------------------------------------------------------------
+static void sendAlertDoc(int code, NaraDoc &doc) {
+  char buf[512];
+  size_t n = serializeJson(doc, buf, sizeof(buf));
+  if (n == 0 || n >= sizeof(buf)) {
+    alertServer.send(500, "application/json", "{\"error\":\"response_too_big\"}");
+    return;
+  }
+  alertServer.send(code, "application/json", buf);
+}
+
+static void sendAlertError(int code, const char *error) {
+  NaraDoc doc;
+  doc["error"] = error;
+  sendAlertDoc(code, doc);
+}
+
+static void handleApiAlertOptions82() {
+  alertServer.sendHeader("Access-Control-Allow-Origin", "*");
+  alertServer.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  alertServer.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  alertServer.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleApiAlertGet82() {
+  alertServer.sendHeader("Access-Control-Allow-Origin", "*");
+  NaraDoc doc;
+  doc["ok"] = true;
+  doc["dfplayer"] = mp3Ready;
+  doc["queue"] = 0;
+  doc["volume"] = volume;
+  doc["last_event"] = lastEvent;
+  sendAlertDoc(200, doc);
+}
+
+static void handleApiAlert82() {
+  alertServer.sendHeader("Access-Control-Allow-Origin", "*");
+  NaraDoc doc;
+  DeserializationError err = deserializeJson(doc, alertServer.arg("plain"));
+  if (err) {
+    sendAlertError(400, "bad_json");
+    return;
+  }
+  const char *eventId = doc["event_id"] | "";
+  const char *code = doc["code"] | "";
+  const char *language = doc["language"] | "";
+
+  if (eventId[0] == '\0' || code[0] == '\0' || language[0] == '\0') {
+    sendAlertError(400, "missing_fields");
+    return;
+  }
+
+  if (alertIdSeen(eventId)) {
+    sendAlertError(409, "duplicate_event_id");
+    return;
+  }
+  rememberAlertId(eventId);
+
+  int folder = folderForLang(language);
+  int track = trackForEvent(code);
+  if (folder == 0 || track == 0) {
+    sendAlertError(400, "unsupported_code_or_language");
+    return;
+  }
+
+  snprintf(lang, sizeof(lang), "%s", language);
+  saveLang();
+
+  if (ensureMp3(false)) {
+    player.playFolder((uint8_t)folder, (uint8_t)track);
+    snprintf(lastEvent, sizeof(lastEvent), "%s", code);
+    Serial.printf("[alert:82] play folder %d track %d (%s) id=%s\n", folder, track, code, eventId);
+  } else {
+#if NARA_TOLERANT_MP3
+    snprintf(lastEvent, sizeof(lastEvent), "%s", code);
+    Serial.printf("[alert:82] MOCK PLAY (DFPlayer offline/simulasi): folder %d track %d (%s) id=%s\n", folder, track, code, eventId);
+#endif
+  }
+
+  NaraDoc out;
+  out["ok"] = true;
+  out["queued"] = true;
+  out["folder"] = folder;
+  out["file"] = track;
+  out["dfplayer"] = mp3Ready;
+  sendAlertDoc(202, out);
+}
+
+static void handleNotFoundAlert() { sendAlertError(404, "not_found"); }
 
 static void factoryReset() {
   Serial.println("[reset] hapus WiFi + token, restart ke portal setup");
@@ -415,40 +655,43 @@ static void serviceDiscover() {
   int packetSize = udp.parsePacket();
   if (packetSize <= 0) return;
 
-  char buf[32];
+  char buf[64];
   int len = udp.read(buf, sizeof(buf) - 1);
   if (len < 0) len = 0;
   buf[len] = '\0';
   while (udp.available() > 0) udp.read();
-  while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r' || buf[len - 1] == ' ' ||
-                     buf[len - 1] == '\0')) {
+
+  // Bersihkan newline/spasi di ujung paket
+  while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r' || buf[len - 1] == ' ' || buf[len - 1] == '\0')) {
     buf[--len] = '\0';
   }
-  if (strcmp(buf, NARA_DISCOVERY_MAGIC) != 0) return;
+  if (strstr(buf, NARA_DISCOVERY_MAGIC) == NULL) return;
 
   NaraDoc doc;
   doc["id"] = deviceId;
   doc["name"] = deviceName;
   doc["ip"] = WiFi.localIP().toString();
   doc["stream_port"] = NARA_STREAM_PORT;
+  doc["alert_port"] = NARA_ALERT_PORT;
+  doc["http_port"] = NARA_HTTP_PORT;
   doc["paired"] = isPaired();
+  doc["fw"] = NARA_FW_VERSION;
 
-  char out[256];
+  char out[320];
   size_t n = serializeJson(doc, out, sizeof(out));
   if (n == 0 || n >= sizeof(out)) return;
   udp.beginPacket(udp.remoteIP(), udp.remotePort());
   udp.write((const uint8_t *)out, n);
   udp.endPacket();
+  Serial.printf("[udp] Discovery probe dijawab ke %s:%d\n", udp.remoteIP().toString().c_str(), udp.remotePort());
 }
 
 static void tryStartServices() {
   if (servicesStarted) return;
 
-  // Portal WiFiManager juga memakai port 80. Tunggu sebentar setelah STA up
-  // dan portal sudah tutup, supaya bind port 80 tidak bentrok.
   static bool settling = false;
   static uint32_t readySince = 0;
-  bool ready = WiFi.status() == WL_CONNECTED && !wifiManager.getConfigPortalActive();
+  bool ready = (WiFi.status() == WL_CONNECTED) && !wifiManager.getConfigPortalActive();
   if (!ready) {
     settling = false;
     return;
@@ -465,24 +708,39 @@ static void tryStartServices() {
 
   if (MDNS.begin(hostname)) {
     char portTxt[8];
+    char alertTxt[8];
     snprintf(portTxt, sizeof(portTxt), "%d", NARA_STREAM_PORT);
+    snprintf(alertTxt, sizeof(alertTxt), "%d", NARA_ALERT_PORT);
+
+    // Layanan discovery untuk device_discovery.py
     MDNS.addService("nara", "tcp", NARA_HTTP_PORT);
     MDNS.addServiceTxt("nara", "tcp", "id", deviceId);
     MDNS.addServiceTxt("nara", "tcp", "stream_port", portTxt);
+    MDNS.addServiceTxt("nara", "tcp", "alert_port", alertTxt);
     MDNS.addServiceTxt("nara", "tcp", "fw", NARA_FW_VERSION);
-    Serial.printf("[mdns] %s.local _nara._tcp port %d\n", hostname, NARA_HTTP_PORT);
+    MDNS.addServiceTxt("nara", "tcp", "paired", isPaired() ? "1" : "0");
+
+    // Standard HTTP services
+    MDNS.addService("http", "tcp", NARA_HTTP_PORT);
+    MDNS.addService("http", "tcp", NARA_STREAM_PORT);
+    MDNS.addService("http", "tcp", NARA_ALERT_PORT);
+    Serial.printf("[mdns] %s.local _nara._tcp port %d (stream:%d alert:%d)\n",
+                  hostname, NARA_HTTP_PORT, NARA_STREAM_PORT, NARA_ALERT_PORT);
   } else {
-    Serial.println("[mdns] gagal, UDP 4210 tetap dipakai");
+    Serial.println("[mdns] Gagal menginisialisasi mDNS, UDP 4210 tetap aktif");
   }
 
   if (!udp.begin(NARA_DISCOVERY_PORT)) {
-    Serial.println("[udp] bind 4210 gagal");
+    Serial.println("[udp] Bind port 4210 gagal");
+  } else {
+    Serial.printf("[udp] Discovery listener aktif di port %d\n", NARA_DISCOVERY_PORT);
   }
 
   if (naraStartMjpegServer(NARA_STREAM_PORT, cameraReady)) {
-    Serial.printf("[cam] http://%s:%d/stream\n", WiFi.localIP().toString().c_str(), NARA_STREAM_PORT);
+    Serial.printf("[cam] Stream MJPEG: http://%s:%d/stream\n", WiFi.localIP().toString().c_str(), NARA_STREAM_PORT);
   }
 
+  // 1. Inisialisasi Server Port 80 (Kontrol & Pairing)
   static const char *headerKeys[] = {NARA_TOKEN_HEADER};
   server.collectHeaders(headerKeys, 1);
   server.on("/info", HTTP_GET, handleInfo);
@@ -490,29 +748,44 @@ static void tryStartServices() {
   server.on("/pair", HTTP_POST, handlePair);
   server.on("/play", HTTP_POST, handlePlay);
   server.on("/volume", HTTP_POST, handleVolume);
+  server.on("/capture", HTTP_GET, handleCapture);
+  server.on("/api/alert", HTTP_POST, handleApiAlert);
+  server.on("/api/alert", HTTP_GET, handleApiAlertGet);
+  server.on("/api/alert", HTTP_OPTIONS, handleApiAlertOptions);
   server.onNotFound(handleNotFound);
   server.begin();
 
+  // 2. Inisialisasi Server Port 82 (Dedicated Voice Alert untuk voice_alert_service.py)
+  alertServer.collectHeaders(headerKeys, 1);
+  alertServer.on("/api/alert", HTTP_POST, handleApiAlert82);
+  alertServer.on("/api/alert", HTTP_GET, handleApiAlertGet82);
+  alertServer.on("/api/alert", HTTP_OPTIONS, handleApiAlertOptions82);
+  alertServer.onNotFound(handleNotFoundAlert);
+  alertServer.begin();
+
   servicesStarted = true;
   servicesStartedMs = millis();
-  Serial.printf("[http] kontrol :%d  id=%s  paired=%s  jendela pair=%lus\n", NARA_HTTP_PORT, deviceId,
-                isPaired() ? "ya" : "tidak", (unsigned long)(NARA_PAIR_WINDOW_MS / 1000));
+  Serial.printf("[http] Port 80 (Kontrol) & Port 82 (Alert) aktif! id=%s  paired=%s\n",
+                deviceId, isPaired() ? "ya" : "tidak");
 }
 
 void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println();
-  Serial.println("NARA ESP32-S3 firmware " NARA_FW_VERSION);
+  Serial.println("==================================================");
+  Serial.println("  NARA ESP32-S3 Firmware v" NARA_FW_VERSION);
+  Serial.println("  ESP32-S3-CAM + DFPlayer Mini Voice Alert");
+  Serial.println("==================================================");
 
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
   loadPrefs();
 
   WiFi.mode(WIFI_STA);
   buildIdentity();
-  Serial.printf("[pin] board=%d  UART TX=%d RX=%d  tombol=%d\n", NARA_CAMERA_BOARD, MP3_UART_TX,
+  Serial.printf("[pin] Board=%d  UART TX=%d RX=%d  Tombol=%d\n", NARA_CAMERA_BOARD, MP3_UART_TX,
                 MP3_UART_RX, RESET_BUTTON_PIN);
-  Serial.printf("[id] %s  AP %s\n", deviceId, apName);
+  Serial.printf("[id] Device ID: %s  |  Hostname: %s.local\n", deviceId, hostname);
 
   initCamera();
 
@@ -520,6 +793,30 @@ void setup() {
   delay(100);
   ensureMp3(true);
 
+#if USE_DIRECT_WIFI
+  Serial.printf("[wifi] Menghubungkan langsung ke SSID '%s'...\n", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  uint32_t startAttempt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 12000) {
+    delay(400);
+    Serial.print(".");
+  }
+  Serial.println();
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("[wifi] TERHUBUNG! IP ESP: %s\n", WiFi.localIP().toString().c_str());
+    tryStartServices();
+  } else {
+    Serial.println("[wifi] Gagal konek langsung ke SSID. Mengaktifkan WiFiManager AP...");
+    wifiManager.setDebugOutput(true);
+    wifiManager.setTitle("NARA");
+    wifiManager.setHostname(hostname);
+    wifiManager.setConfigPortalBlocking(false);
+    wifiManager.setConnectTimeout(20);
+    wifiManager.setConfigPortalTimeout(0);
+    wifiManager.setWiFiAutoReconnect(true);
+    wifiManager.autoConnect(apName);
+  }
+#else
   wifiManager.setDebugOutput(true);
   wifiManager.setTitle("NARA");
   wifiManager.setHostname(hostname);
@@ -527,16 +824,22 @@ void setup() {
   wifiManager.setConnectTimeout(20);
   wifiManager.setConfigPortalTimeout(0);
   wifiManager.setWiFiAutoReconnect(true);
-  // Portal non-blocking supaya tombol reset tetap dipolling di loop().
   wifiManager.autoConnect(apName);
-  tryStartServices();
+#endif
 }
 
 void loop() {
+#if !USE_DIRECT_WIFI
   wifiManager.process();
+#else
+  if (WiFi.status() != WL_CONNECTED) {
+    wifiManager.process();
+  }
+#endif
   tryStartServices();
   if (servicesStarted) {
     server.handleClient();
+    alertServer.handleClient();
     serviceDiscover();
   }
   serviceButton();
