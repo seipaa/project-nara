@@ -22,6 +22,7 @@
       --pri-tx: #f1f2ee;
       --good: #4f6b48;
       --bad: #b4452c;
+      --warn: #d97706;
       --soft: #e3e7df;
     }
 
@@ -36,6 +37,7 @@
       --pri-tx: #161a14;
       --good: #9bb894;
       --bad: #f08a6f;
+      --warn: #f59e0b;
       --soft: #252d21;
       --olive: #4a6045;
     }
@@ -97,6 +99,10 @@
     }
 
     .warn {
+      color: var(--warn)
+    }
+
+    .bad {
       color: var(--bad)
     }
 
@@ -356,7 +362,12 @@
       transition: width .5s
     }
 
-    .bar.a i {
+    .bar.warn i {
+      background: var(--warn)
+    }
+
+    .bar.a i,
+    .bar.bad i {
       background: var(--bad)
     }
 
@@ -1159,6 +1170,25 @@
       color: var(--tx)
     }
 
+    .cam .tag.warn {
+      border-color: var(--warn);
+      color: var(--warn)
+    }
+
+    .cam .tag.bad {
+      border-color: var(--bad);
+      color: var(--bad)
+    }
+
+    .cam .tag.ok {
+      border-color: var(--good);
+      color: var(--good)
+    }
+
+    .pane.timer.warn {
+      border-color: var(--warn)
+    }
+
     .tl {
       display: flex;
       align-items: flex-end;
@@ -1172,6 +1202,10 @@
       min-width: 3px;
       background: var(--good);
       border-radius: 3px 3px 0 0
+    }
+
+    .tl i.warn {
+      background: var(--warn)
     }
 
     .tl i.lo {
@@ -2069,7 +2103,7 @@
     // ── Ritme ─────────────────────────────────────────────────────────────────
     $('rit').addEventListener('click', e => {
       const b = e.target.closest('.chip'); if (!b) return;
-      document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c === b));
+      $('rit').querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c === b));
       S.focusMin = +b.dataset.m; S.breakMin = +b.dataset.b;
     });
 
@@ -2203,7 +2237,10 @@
       // ── DISTRAKSI: hanya berdasarkan label ML (bukan lokal) ───────────────
       // label=1 → ML menilai TIDAK FOKUS → catat sebagai distraksi
       // label=0 → ML menilai FOKUS (termasuk "Fokus Menatap Materi") → JANGAN catat
-      const isLow = d.label === 1;
+      // ── Evaluasi Tri-State: >= 50% Fokus, < 50% Terganggu, <= 40% Tidak Fokus ──
+      const isUnfocused = (s <= 40);
+      const isDistracted = (s < 50 && s > 40);
+      const isLow = isUnfocused || (d.label === 1 && s < 50);
 
       if (isLow && !S.lowFlag) S.dist++;
       S.lowFlag = isLow;
@@ -2215,21 +2252,27 @@
       S.streak = isLow ? 0 : S.streak + 1;
       S.longest = Math.max(S.longest, S.streak);
 
-      // Catat penyebab gangguan HANYA jika ML menilai tidak fokus
-      // DAN reason BUKAN kondisi fokus
-      if (isLow && d.reason && !FOCUSED_REASONS.has(d.reason)) {
+      // Catat penyebab gangguan jika skor < 50% DAN reason bukan kondisi fokus
+      if ((s < 50 || isLow) && d.reason && !FOCUSED_REASONS.has(d.reason)) {
         S.distrLog[d.reason] = (S.distrLog[d.reason] || 0) + 1;
       }
 
-      // ── UI update ─────────────────────────────────────────────────────────
+      // ── UI update: Indikator fokus sesuai spesifikasi ──────────────────────
       const risk = 100 - s;
-      const name = s >= 70 ? 'Fokus' : s >= 55 ? 'Mulai goyah' : 'Terganggu';
+      const name = isUnfocused ? 'Tidak Fokus' : (isDistracted ? 'Terganggu' : 'Fokus');
       $('stateName').textContent = name;
-      $('risk').textContent = s >= 55 ? 'Fokus ' + s + '%' : 'Risiko gangguan ' + risk + '%';
-      $('riskBar').classList.toggle('a', isLow);
-      $('riskBar').firstChild.style.width = s + '%';
-      $('ringcard').classList.toggle('lo', isLow);
       $('camTag').textContent = name;
+      $('camTag').className = 'tag' + (isUnfocused ? ' bad' : (isDistracted ? ' warn' : ' ok'));
+      $('risk').textContent = s >= 50 ? 'Fokus ' + s + '%' : 'Risiko gangguan ' + risk + '%';
+
+      const riskBar = $('riskBar');
+      riskBar.classList.toggle('a', isUnfocused);
+      riskBar.classList.toggle('warn', isDistracted);
+      riskBar.firstChild.style.width = s + '%';
+
+      const ringcard = $('ringcard');
+      ringcard.classList.toggle('lo', isUnfocused);
+      ringcard.classList.toggle('warn', isDistracted);
 
       // Reason text — terjemahkan dan tampilkan konteks
       const reasonTxt = translateReason(d.reason);
@@ -2263,7 +2306,7 @@
     function flush() {
       if (!S.buf.length) return;
       S.scores.push(Math.round(S.buf.reduce((a, b) => a + b, 0) / S.buf.length)); S.buf = [];
-      $('tl').innerHTML = '<div class="tl">' + S.scores.map(v => `<i class="${v < 55 ? 'lo' : ''}" style="height:${Math.max(6, Number(v))}%" title="${esc(v)}%"></i>`).join('') + '</div>';
+      $('tl').innerHTML = '<div class="tl">' + S.scores.map(v => `<i class="${v <= 40 ? 'lo' : (v < 50 ? 'warn' : '')}" style="height:${Math.max(6, Number(v))}%" title="${esc(v)}%"></i>`).join('') + '</div>';
     }
 
     function enterPhase(uiMode, serverMode) {
@@ -2704,7 +2747,8 @@
         return;
       }
       fillCameraSelect(data.cameras || [], data.selected_id);
-      if (data.language) setLangUi(data.language);
+      const activeLang = data.language || localStorage.getItem('nara_lang') || 'id';
+      setLangUi(activeLang);
       if (data.volume != null && $('vol')) {
         $('vol').value = data.volume;
         $('volNum').textContent = data.volume;
@@ -2717,8 +2761,10 @@
     }
 
     function setLangUi(lang) {
+      const targetLang = (lang === 'en') ? 'en' : 'id';
       document.querySelectorAll('#langChips .chip').forEach(c => {
-        c.setAttribute('aria-pressed', c.dataset.lang === lang ? 'true' : 'false');
+        const isSelected = (c.dataset.lang === targetLang);
+        c.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
       });
     }
 
@@ -2793,6 +2839,7 @@
     };
 
     let _activeAudio = null;
+    let _startAudioLockUntil = 0;
 
     function playAlertAudio(track, langFolder) {
       if ($('audioOn') && !$('audioOn').checked) return;
@@ -2804,6 +2851,13 @@
       } else if (!String(filename).endsWith('.mp3') && !String(filename).endsWith('.mpeg')) {
         const codeKey = String(filename).padStart(3, '0');
         filename = TRACK_FILES[codeKey] || TRACK_FILES[filename] || '001_not_focus.mp3';
+      }
+
+      // Proteksi Grace Period: Jangan potong suara start yang sedang diputar
+      const isStartAudio = String(filename).includes('004');
+      if (!isStartAudio && _activeAudio && !_activeAudio.ended && Date.now() < _startAudioLockUntil) {
+        console.log('[AUDIO] Menahan suara peringatan agar suara pembuka tuntas diputar.');
+        return;
       }
 
       const audioSrc = `/suara/${folder}/${filename}`;
@@ -2851,6 +2905,7 @@
       const now = Date.now();
       if (now - _lastStartAudioTs < 3000) return;
       _lastStartAudioTs = now;
+      _startAudioLockUntil = now + 5000;
       const isEsp = isEspCameraSelected();
       const soundTarget = isEsp ? 'esp32' : 'laptop';
       const lang = currentLang();
@@ -2911,6 +2966,14 @@
         const now = Date.now();
         if (now - _lastStartAudioTs < 3000) return;
         _lastStartAudioTs = now;
+        _startAudioLockUntil = now + 5000;
+      }
+
+      // Suppress peringatan distraksi (001) selama 10 detik awal setelah sesi start
+      const isDistractionAlert = (code === 'NOT_FOCUSED' || code === 'SLEEPING' || code === 'YAWNING' || code === 'FACE_ABSENT' || String(data.track).includes('001'));
+      if (isDistractionAlert && (Date.now() - _lastStartAudioTs < 10000)) {
+        console.log('[AUDIO] Menunda voice alert distraksi dalam masa grace period 10s.');
+        return;
       }
 
       if (soundTarget === 'laptop') {
@@ -2973,6 +3036,7 @@
         postAPI('/api/settings/audio', { language: saved });
       } else {
         updateCardSelection('id');
+        setLangUi('id');
         modal.classList.remove('hidden');
       }
     }

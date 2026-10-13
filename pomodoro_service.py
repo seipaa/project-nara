@@ -35,7 +35,8 @@ DEFAULT_BREAK_DURATION = 5 * 60       # 5 Menit
 DEFAULT_LONG_BREAK_DURATION = 15 * 60 # 15 Menit
 
 # Ambang Batas Intervensi
-UNFOCUSED_ALERT_DURATION_SEC = 15.0   # 15 detik tidak fokus -> Peringatan visual
+START_GRACE_PERIOD_SEC = 10.0         # 10 detik jeda awal sesi agar audio start tuntas
+UNFOCUSED_ALERT_DURATION_SEC = 10.0   # 10 detik tidak fokus berturut-turut -> Peringatan visual
 UNFOCUSED_COOLDOWN_SEC = 30.0         # Cooldown event UNFOCUSED / nudge
 MAX_YAWNS_IN_WINDOW = 2               # 2x menguap dalam window -> Saran istirahat
 SLEEP_ALERT_DURATION_SEC = 3.0        # 3 detik tidur -> Alarm bangunkan
@@ -98,6 +99,7 @@ class PomodoroService:
         self.last_tick = None
         self._tick_fraction = 0.0
         self.session_start_time = None
+        self.session_started_ts = 0.0
         self.camera_connected = True
         self.face_detected = True
         self.auto_paused_reason = None
@@ -215,6 +217,7 @@ class PomodoroService:
         self.last_tick = time.time()
         self._tick_fraction = 0.0
         self.session_start_time = datetime.now().isoformat()
+        self.session_started_ts = time.time() if mode == "STUDY" else 0.0
         self._reset_session_stats()
         if emit_session_start and mode == "STUDY":
             self._queue("SESSION_START")
@@ -395,9 +398,19 @@ class PomodoroService:
         self._dispatch(pending, listeners)
         return status
 
+    def is_in_start_grace_period(self, now=None) -> bool:
+        """Cek apakah sesi baru mulai dalam 10 detik pertama (grace period)."""
+        with self._lock:
+            if self.mode != "STUDY" or not self.is_running:
+                return False
+            t = time.time() if now is None else now
+            return (t - getattr(self, "session_started_ts", 0.0)) < START_GRACE_PERIOD_SEC
+
     def _maybe_emit_unfocused(self, now):
-        """UNFOCUSED hanya saat STUDY, cooldown 30 detik."""
+        """UNFOCUSED hanya saat STUDY, cooldown 30 detik, suppress selama grace period 10s."""
         if self.mode != "STUDY" or not self.is_running:
+            return
+        if self.is_in_start_grace_period(now):
             return
         if now - self.last_unfocused_emit < UNFOCUSED_COOLDOWN_SEC:
             return
@@ -448,8 +461,13 @@ class PomodoroService:
             label = prediction_data.get("label", 0)
             is_sleeping = bool(telemetry.get("is_sleeping", False))
             is_yawning = bool(telemetry.get("is_yawning", False))
+            is_grace = self.is_in_start_grace_period(now)
 
-            if label == 0 and face_detected:
+            if is_grace:
+                # Masa pemanasan 10 detik awal: biarkan suara start tuntas
+                self.unfocused_start_time = None
+                self.sleep_start_time = None
+            elif label == 0 and face_detected:
                 self.total_focus_seconds += dt
                 self.unfocused_start_time = None
             elif label == 1 or not face_detected:
@@ -484,12 +502,12 @@ class PomodoroService:
                 self.sleep_start_time = None
 
             if self.unfocused_start_time and (now - self.unfocused_start_time >= UNFOCUSED_ALERT_DURATION_SEC):
-                if now - self.last_intervention_time > UNFOCUSED_COOLDOWN_SEC:
+                if not is_grace and now - self.last_intervention_time > UNFOCUSED_COOLDOWN_SEC:
                     self.active_alert = f"[INFO] Konsentrasi menurun ({reason}). Tarik napas dan fokus kembali ke materi!"
                     self.last_intervention_time = now
                     self._log_intervention(
                         "PERSISTENT_UNFOCUSED",
-                        f"Tidak fokus > 15s ({reason})",
+                        f"Tidak fokus > {int(UNFOCUSED_ALERT_DURATION_SEC)}s ({reason})",
                         "VISUAL_NUDGE",
                     )
                     self._maybe_emit_unfocused(now)

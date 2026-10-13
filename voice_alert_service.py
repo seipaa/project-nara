@@ -22,7 +22,7 @@ NARA_ALERT_PORT = int(os.getenv("NARA_ALERT_PORT", "82"))
 NARA_ALERT_PATH = os.getenv("NARA_ALERT_PATH", "/api/alert")
 NARA_ALERT_LANGUAGE = os.getenv("NARA_ALERT_LANGUAGE", "id")
 NARA_ALERT_ENABLED = os.getenv("NARA_ALERT_ENABLED", "1").strip() not in ("0", "false", "False")
-NARA_ALERT_CONFIRM_SEC = float(os.getenv("NARA_ALERT_CONFIRM_SEC", "2.0"))
+NARA_ALERT_CONFIRM_SEC = float(os.getenv("NARA_ALERT_CONFIRM_SEC", "10.0"))
 NARA_ALERT_COOLDOWN_SEC = float(os.getenv("NARA_ALERT_COOLDOWN_SEC", "45.0"))
 
 VALID_CODES = (
@@ -69,10 +69,13 @@ def classify_ml_event(prediction_data: Optional[Dict[str, Any]]) -> Optional[str
 
     Hanya mengembalikan kode jika prediksi sudah punya sinyal yang jelas.
     Sliding window SVM (is_ready) diperlukan untuk NOT_FOCUSED.
+    NOT_FOCUSED hanya dipicu jika skor fokus <= 40.0% (40 ke bawah).
+    Skor 41-49% adalah status 'Terganggu' (visual saja, tanpa alarm suara).
     """
     if not prediction_data:
         return None
 
+    focus_score = float(prediction_data.get("focus_score", 100.0))
     label = prediction_data.get("label", -1)
     telemetry = prediction_data.get("telemetry") or {}
     face_detected = bool(telemetry.get("face_detected", False))
@@ -86,7 +89,7 @@ def classify_ml_event(prediction_data: Optional[Dict[str, Any]]) -> Optional[str
         return "FACE_ABSENT"
     if is_yawning:
         return "YAWNING"
-    if label == 1 and is_ready:
+    if label == 1 and is_ready and focus_score <= 40.0:
         return "NOT_FOCUSED"
     return None
 
@@ -102,7 +105,18 @@ class VoiceAlertGate:
         self._fired_code: Optional[str] = None
         self._last_sent_at: Dict[str, float] = {}
 
-    def evaluate(self, prediction_data: Optional[Dict[str, Any]], now: Optional[float] = None) -> Optional[Dict[str, str]]:
+    def evaluate(
+        self,
+        prediction_data: Optional[Dict[str, Any]],
+        now: Optional[float] = None,
+        in_grace_period: bool = False
+    ) -> Optional[Dict[str, str]]:
+        if in_grace_period:
+            self._pending_code = None
+            self._pending_since = None
+            self._fired_code = None
+            return None
+
         now = time.time() if now is None else now
         code = classify_ml_event(prediction_data)
         if code is None:

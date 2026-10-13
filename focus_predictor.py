@@ -309,9 +309,17 @@ class FocusPredictor:
             label = self.current_label
             focus_score = round((1.0 - p_risk) * 100.0, 1)
 
-            # Inisialisasi teks status & warna default berdasarkan label
-            label_text = "Fokus (Risiko Rendah)" if label == 0 else "Tidak Fokus (Risiko Tinggi)"
-            status_color = (0, 255, 0) if label == 0 else (0, 0, 255)
+            # Inisialisasi teks status & warna default berdasarkan ambang batas tri-state
+            # >= 50% Fokus (Hijau), 41-49% Terganggu (Amber), <= 40% Tidak Fokus (Merah)
+            if focus_score <= 40.0:
+                label_text = "Tidak Fokus"
+                status_color = (0, 0, 255)
+            elif focus_score < 50.0:
+                label_text = "Terganggu"
+                status_color = (0, 165, 255)
+            else:
+                label_text = "Fokus"
+                status_color = (0, 255, 0)
 
             # Sinkronisasi Keterangan dengan Keputusan SVM
             # Mencegah kontradiksi visual saat posisi saat ini sudah tegak tapi window 3s masih membawa sisa memori distraksi
@@ -324,7 +332,7 @@ class FocusPredictor:
                     label = 0
                     p_risk = min(p_risk, 0.35)
                     focus_score = round((1.0 - p_risk) * 100.0, 1)
-                    label_text = "Fokus (Risiko Rendah)"
+                    label_text = "Fokus"
                     status_color = (0, 255, 0)
                     reason = "Fokus Menatap Materi"
                 else:
@@ -358,14 +366,23 @@ class FocusPredictor:
         focus_score = pred["focus_score"]
         reason = pred["telemetry"]["reason"]
 
-        bg_color = (30, 120, 30) if label == 0 else (30, 30, 180)
+        if focus_score <= 40.0:
+            bg_color = (30, 30, 180)      # Merah
+            txt_color = (200, 200, 255)
+        elif focus_score < 50.0:
+            bg_color = (20, 120, 190)     # Amber/Orange
+            txt_color = (200, 235, 255)
+        else:
+            bg_color = (30, 120, 30)      # Hijau
+            txt_color = (200, 255, 200)
+
         cv2.rectangle(frame, (10, 10), (320, 85), bg_color, -1)
         cv2.rectangle(frame, (10, 10), (320, 85), (255, 255, 255), 1)
 
         cv2.putText(frame, f"STATUS: {label_text}", (20, 35),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
         cv2.putText(frame, f"Focus Score: {focus_score:.1f}% | Risk: {p_risk*100:.1f}%", (20, 58),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 255, 200) if label == 0 else (200, 200, 255), 1)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, txt_color, 1)
         cv2.putText(frame, f"Info: {reason}", (20, 78),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.40, (230, 230, 230), 1)
 

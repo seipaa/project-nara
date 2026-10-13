@@ -344,6 +344,8 @@ async def video_processing_worker():
             pomodoro_data = await asyncio.to_thread(pomodoro.update_telemetry, prediction_data)
 
             # Voice alert: Terkonfirmasi ML saat belajar (non-blocking)
+            # Masa pemanasan 10 detik awal (grace period): biarkan suara pembuka selesai tuntas
+            is_grace = pomodoro.is_in_start_grace_period(now) if pomodoro else False
             if (
                 NARA_ALERT_ENABLED
                 and voice_alert_gate is not None
@@ -351,8 +353,9 @@ async def video_processing_worker():
                 and pomodoro is not None
                 and pomodoro.mode == "STUDY"
                 and pomodoro.is_running
+                and not is_grace
             ):
-                alert_payload = voice_alert_gate.evaluate(prediction_data, now=now)
+                alert_payload = voice_alert_gate.evaluate(prediction_data, now=now, in_grace_period=is_grace)
                 if alert_payload:
                     is_esp = isinstance(_active_source, str) and ("http" in _active_source or ":81" in _active_source)
                     if is_esp:
@@ -815,6 +818,12 @@ async def api_audio_config(request: Request):
             return JSONResponse({"ok": False, "error": "Bahasa tidak dikenal."}, status_code=400)
         if language:
             set_alert_language(language)
+        if settings_store is not None:
+            settings_store.set_audio(
+                language=language if language in ("id", "en") else settings_store.get_language(),
+                volume=int(volume) if volume is not None else settings_store.get_volume(),
+                enabled=bool(enabled) if enabled is not None else settings_store.get_audio_enabled(),
+            )
         status = await bridge.configure(language=language, volume=volume, enabled=enabled)
         return JSONResponse({"ok": True, "device": status})
     except Exception:
