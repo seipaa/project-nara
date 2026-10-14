@@ -152,16 +152,7 @@ async def lifespan(app: FastAPI):
             "SESSION_END": "Sesi Pomodoro selesai — waktu belajar telah habis!",
             "BREAK_END": "Waktu istirahat selesai — yuk lanjut belajar!",
         }
-        reason = reason_map.get(event, "Pengumuman sesi Pomodoro.")
-
-        if is_esp and voice_alert_client is not None and loop is not None:
-            alert_payload = {
-                "event_id": f"{event}-{uuid.uuid4().hex[:12]}",
-                "code": event,
-                "language": NARA_ALERT_LANGUAGE,
-            }
-            asyncio.run_coroutine_threadsafe(voice_alert_client.send(alert_payload), loop)
-
+        # Suara dialihkan 100% ke speaker laptop
         if loop is not None:
             asyncio.run_coroutine_threadsafe(
                 _broadcast({
@@ -172,7 +163,7 @@ async def lifespan(app: FastAPI):
                     },
                     "track": track_file,
                     "lang_folder": lang_folder,
-                    "sound_target": "esp32" if is_esp else "laptop",
+                    "sound_target": "laptop",
                 }),
                 loop
             )
@@ -295,8 +286,7 @@ def is_face_detected() -> bool:
 
 def _device_status():
     st = bridge.public_status() if bridge else {}
-    is_esp = isinstance(_active_source, str) and ("http" in _active_source or ":81" in _active_source)
-    st["sound_target"] = "esp32" if is_esp else "laptop"
+    st["sound_target"] = "laptop"
     st["active_source"] = _active_source
     st["camera_healthy"] = is_camera_healthy()
     st["face_detected"] = is_face_detected()
@@ -357,9 +347,6 @@ async def video_processing_worker():
             ):
                 alert_payload = voice_alert_gate.evaluate(prediction_data, now=now, in_grace_period=is_grace)
                 if alert_payload:
-                    is_esp = isinstance(_active_source, str) and ("http" in _active_source or ":81" in _active_source)
-                    if is_esp:
-                        asyncio.create_task(voice_alert_client.send(alert_payload))
                     track_file = get_track_filename(alert_payload.get("code", ""))
                     lang_folder = get_language_folder(alert_payload.get("language", "id"))
                     await _broadcast({
@@ -367,7 +354,7 @@ async def video_processing_worker():
                         "alert": alert_payload,
                         "track": track_file,
                         "lang_folder": lang_folder,
-                        "sound_target": "esp32" if is_esp else "laptop",
+                        "sound_target": "laptop",
                     })
 
             ret, buffer = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
@@ -682,9 +669,10 @@ async def api_cameras():
         cameras = [c for c in items if c.get("available")]
         if discovery is not None:
             for dev in discovery.list_devices():
+                dev_label = f"NARA Device ({dev['ip']})" if dev.get("ip") else "NARA Device"
                 cameras.append({
                     "id": f"esp:{dev['id']}",
-                    "name": dev.get("name") or dev["id"],
+                    "name": dev_label,
                     "kind": "esp",
                     "source": dev.get("stream_url"),
                     "ip": dev.get("ip"),
@@ -833,14 +821,12 @@ async def api_audio_config(request: Request):
 
 @app.post("/api/audio/test")
 async def api_audio_test():
-    try:
-        result = await bridge.test_audio()
-        if not result.get("ok"):
-            return JSONResponse({"ok": False, "error": "Tes suara gagal.", "device": result.get("device")}, status_code=502)
-        return JSONResponse(result)
-    except Exception:
-        logger.exception("audio test")
-        return _fail()
+    """Tes suara diarahkan secara lokal ke speaker laptop."""
+    return JSONResponse({
+        "ok": True,
+        "target": "laptop",
+        "message": "Tes suara dialihkan ke speaker laptop."
+    })
 
 
 @app.get("/api/config")

@@ -185,11 +185,14 @@
 
     .steps {
       display: flex;
-      margin: 0 auto;
+      margin: 0;
       padding: 0;
       border: 2px solid var(--tx);
       border-radius: 99px;
-      overflow: hidden
+      overflow: hidden;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
     }
 
     .steps li {
@@ -220,6 +223,7 @@
     }
 
     .linkbtn {
+      margin-left: auto;
       background: none;
       border: 0;
       color: var(--mu);
@@ -919,7 +923,7 @@
 
     .session {
       display: grid;
-      grid-template-columns: 240px 1fr 280px;
+      grid-template-columns: 260px 1fr 260px;
       flex: 1;
       min-height: 0;
       align-items: stretch
@@ -1007,8 +1011,11 @@
     }
 
     #sub {
-      font-size: 11.5px;
-      color: #26301f
+      font-size: clamp(15px, 2.4vw, 18px);
+      font-weight: 700;
+      color: #161a14;
+      letter-spacing: .02em;
+      transform: translateY(-10px);
     }
 
     .strip {
@@ -1335,7 +1342,7 @@
     /* ── Responsive ─────────────────────────────────────────────────────────── */
     @media(max-width:1100px) {
       .session {
-        grid-template-columns: 200px 1fr 240px
+        grid-template-columns: 220px 1fr 220px
       }
     }
 
@@ -1757,17 +1764,7 @@
               <div>
                 <h3>Pilih kamera</h3>
 
-                <!-- Pilihan Cerdas Ramah Siswa: Laptop vs NARA ESP32 -->
-                <div class="chips" id="camTypeChips" style="margin-bottom:8px">
-                  <button type="button" class="chip" data-cam-type="webcam" id="btnTypeWebcam" aria-pressed="true">
-                    Kamera Laptop<small>Webcam bawaan laptop</small>
-                  </button>
-                  <button type="button" class="chip" data-cam-type="esp" id="btnTypeEsp" aria-pressed="false">
-                    Kamera NARA<small>ESP32 di meja belajar</small>
-                  </button>
-                </div>
-
-                <!-- Pilihan Kamera Spesifik -->
+                <!-- Pilihan Kamera -->
                 <div class="inline-actions" style="margin-top:0">
                   <select id="cameraSelect" aria-label="Daftar kamera">
                     <option value="">Mencari kamera...</option>
@@ -1775,7 +1772,7 @@
                   <button type="button" class="btn" id="scanCam">Pindai</button>
                 </div>
 
-                <p class="priv" id="camHint">Memakai webcam bawaan laptop.</p>
+                <p class="priv" id="camHint">Pilih kamera yang tersedia untuk memantau fokus.</p>
 
                 <!-- Badge Output Suara -->
                 <div style="margin-top:8px">
@@ -1818,7 +1815,7 @@
                   <label class="vol"><input id="audioOn" type="checkbox" checked> Suara aktif</label>
                   <button type="button" class="btn" id="testAudio">Tes suara</button>
                 </div>
-                <p class="priv" id="audioStatus">Pilih kamera NARA supaya suara bisa diputar.</p>
+                <p class="priv" id="audioStatus">Suara aktif melalui speaker laptop.</p>
               </div>
             </div>
             <div class="stp">
@@ -1910,7 +1907,6 @@
 
         <!-- TENGAH: Timer badge -->
         <div class="pane timer" id="ringcard">
-          <div class="muted xs" id="phase">Sesi 1, belajar</div>
           <div class="badge">
             <div class="plaid"></div>
             <div class="band"></div>
@@ -2049,7 +2045,7 @@
     function translateReason(r) {
       const m = {
         'Menoleh ke Samping': 'Menoleh ke samping',
-        'Menunduk / Main HP': 'Menunduk / main HP',
+        'Menunduk': 'Menunduk',
         'Melamun ke Atas': 'Melamun / menatap ke atas',
         'Melirik ke Samping': 'Melirik ke samping',
         'Mata Terpejam / Tidur': 'Mata terpejam / tertidur',
@@ -2318,7 +2314,6 @@
       S.mode = uiMode;
       S.serverMode = serverMode;
       if (freshStudy) resetStats();
-      $('phase').textContent = serverMode === 'LONG_BREAK' ? 'Istirahat panjang' : (uiMode === 'belajar' ? 'Sesi belajar' : 'Istirahat');
       $('sub').textContent = uiMode === 'belajar' ? 'tersisa' : 'istirahat';
       if (uiMode === 'istirahat') {
         camOff('Kamera dimatikan selama istirahat.\nBerdiri, minum, lihat yang jauh.');
@@ -2374,7 +2369,7 @@
         } else if (isFaceAbsent) {
           $('pause').textContent = 'Wajah Tidak Terdeteksi';
           $('pause').disabled = true;
-          $('stateName').textContent = 'Dijeda (Wajah Tidak Terdeteksi)';
+          $('stateName').textContent = 'Dijeda';
           $('camTag').textContent = 'Wajah Hilang';
           $('ringcard').classList.add('lo');
           showBanner('⚠️ Wajah tidak terdeteksi! Waktu belajar dijeda otomatis sampai wajah kembali terlihat di depan kamera.', false);
@@ -2414,20 +2409,12 @@
 
     function applyDevice(device) {
       const el = $('audioStatus');
-      if (!el || !device) return;
+      if (el) {
+        el.textContent = 'Suara aktif melalui speaker laptop.';
+      }
       if (typeof updateSoundBadge === 'function') {
-        updateSoundBadge(device.sound_target);
+        updateSoundBadge();
       }
-      if (!device.selected) {
-        if (typeof isEspCameraSelected === 'function' && !isEspCameraSelected()) {
-          el.textContent = 'Suara aktif melalui speaker laptop.';
-        } else {
-          el.textContent = 'Pilih kamera NARA supaya modul suara ESP32 aktif.';
-        }
-      }
-      else if (device.reachable === false) el.textContent = 'Kamera NARA tidak terjangkau. Suara akan dicoba lagi.';
-      else if (device.paired) el.textContent = 'Suara terhubung ke ' + (device.name || 'kamera NARA') + ' (modul MP3 siap).';
-      else el.textContent = 'Menunggu pairing kamera NARA (aktif 2 menit setelah dinyalakan).';
     }
 
     function resetStats() {
@@ -2450,7 +2437,7 @@
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         if (ctx.state === 'suspended') ctx.resume();
-      } catch (_) {}
+      } catch (_) { }
       const mapelEl = $('mapel');
       if (mapelEl && !mapelEl.value) {
         mapelEl.focus();
@@ -2737,7 +2724,6 @@
         sel.value = _cameras[0].id;
       }
       _selectedCam = sel.value;
-      if (typeof updateCamTypeUi === 'function') updateCamTypeUi(isEspCameraSelected());
     }
 
     async function loadCameras() {
@@ -2755,9 +2741,8 @@
       }
       if ($('audioOn') && data.audio_enabled != null) $('audioOn').checked = !!data.audio_enabled;
       const chosen = (_cameras || []).find(c => c.id === _selectedCam);
-      $('camHint').textContent = chosen ? ('Dipakai: ' + (chosen.name || chosen.id)) : 'Pilih webcam atau kamera NARA.';
+      $('camHint').textContent = chosen ? ('Kamera aktif: ' + (chosen.name || chosen.id)) : 'Pilih kamera yang tersedia.';
       updateSoundBadge();
-      if (typeof updateCamTypeUi === 'function') updateCamTypeUi(isEspCameraSelected());
     }
 
     function setLangUi(lang) {
@@ -2787,30 +2772,20 @@
       });
     }
 
-    // ── Logika Adaptif Audio (Laptop vs ESP32) ──────────────────────────────────
+    // ── Logika Audio Speaker Laptop ─────────────────────────────────────────────
     function isEspCameraSelected() {
       const sel = $('cameraSelect');
       const val = (sel && sel.value) ? sel.value : (_selectedCam || '');
       return val.startsWith('esp:') || val.includes('http') || val.includes(':81');
     }
 
-    function updateSoundBadge(forcedTarget) {
+    function updateSoundBadge() {
       const badge = $('soundTargetBadge');
       if (!badge) return;
-      const isEsp = (forcedTarget === 'esp32') || (!forcedTarget && isEspCameraSelected());
-      if (isEsp) {
-        badge.className = 'sound-badge esp';
-        badge.innerHTML = 'Output Suara: <b>Speaker ESP32 (Hardware MP3)</b>';
-        if ($('audioStatus')) {
-          const chosen = (_cameras || []).find(c => c.id === _selectedCam);
-          $('audioStatus').textContent = 'Suara diputar melalui modul MP3 kamera NARA (' + (chosen?.name || 'ESP32') + ').';
-        }
-      } else {
-        badge.className = 'sound-badge';
-        badge.innerHTML = 'Output Suara: <b>Speaker Laptop (Browser Audio)</b>';
-        if ($('audioStatus')) {
-          $('audioStatus').textContent = 'Suara alarm & pengingat diputar langsung via speaker laptop.';
-        }
+      badge.className = 'sound-badge';
+      badge.innerHTML = 'Output Suara: <b>Speaker Laptop (Browser Audio)</b>';
+      if ($('audioStatus')) {
+        $('audioStatus').textContent = 'Suara aktif melalui speaker laptop.';
       }
     }
 
@@ -2906,28 +2881,20 @@
       if (now - _lastStartAudioTs < 3000) return;
       _lastStartAudioTs = now;
       _startAudioLockUntil = now + 5000;
-      const isEsp = isEspCameraSelected();
-      const soundTarget = isEsp ? 'esp32' : 'laptop';
       const lang = currentLang();
       const folder = lang === 'en' ? '01' : '02';
-      if (!isEsp) {
-        playAlertAudio('004_mulai.mp3', folder);
-      }
-      showVoiceToast('004', 'Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!', soundTarget);
+      playAlertAudio('004_mulai.mp3', folder);
+      showVoiceToast('004', 'Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!', 'laptop');
     }
 
     function triggerBreakAudio() {
       const now = Date.now();
       if (now - _lastBreakAudioTs < 3000) return;
       _lastBreakAudioTs = now;
-      const isEsp = isEspCameraSelected();
-      const soundTarget = isEsp ? 'esp32' : 'laptop';
       const lang = currentLang();
       const folder = lang === 'en' ? '01' : '02';
-      if (!isEsp) {
-        playAlertAudio('003_istirahat.mp3', folder);
-      }
-      showVoiceToast('003', 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!', soundTarget);
+      playAlertAudio('003_istirahat.mp3', folder);
+      showVoiceToast('003', 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!', 'laptop');
     }
 
     function showVoiceToast(code, reason, soundTarget) {
@@ -2935,9 +2902,8 @@
       const msgEl = $('voiceToastMsg');
       if (!toast || !msgEl) return;
 
-      const isEsp = (soundTarget === 'esp32');
-      const icon = isEsp ? '📡' : '🔊';
-      const targetLabel = isEsp ? 'Speaker ESP32' : 'Speaker Laptop';
+      const icon = '🔊';
+      const targetLabel = 'Speaker Laptop';
       const cleanCode = String(code || '').substring(0, 3);
       const text = reason || VOICE_MESSAGES[code] || VOICE_MESSAGES[cleanCode] || 'Peringatan fokus aktif.';
 
@@ -2952,7 +2918,6 @@
 
     function handleVoiceAlert(data) {
       if (!data) return;
-      const soundTarget = data.sound_target || (isEspCameraSelected() ? 'esp32' : 'laptop');
       const alertInfo = data.alert || {};
       const code = alertInfo.code || data.track || '001';
       const reason = alertInfo.reason || '';
@@ -2976,10 +2941,8 @@
         return;
       }
 
-      if (soundTarget === 'laptop') {
-        playAlertAudio(data.track || code, data.lang_folder);
-      }
-      showVoiceToast(code, reason, soundTarget);
+      playAlertAudio(data.track || code, data.lang_folder);
+      showVoiceToast(code, reason, 'laptop');
     }
 
     // ── Onboarding Modal Pemilihan Bahasa Suara ──────────────────────────────────
@@ -3024,7 +2987,7 @@
           } catch (_) { }
 
           modal.classList.add('hidden');
-          showVoiceToast('welcome', chosenLang === 'en' ? 'Voice assistant diatur ke English.' : 'Asisten suara diatur ke Bahasa Indonesia.', isEspCameraSelected() ? 'esp32' : 'laptop');
+          showVoiceToast('welcome', chosenLang === 'en' ? 'Voice assistant diatur ke English.' : 'Asisten suara diatur ke Bahasa Indonesia.', 'laptop');
         };
       }
 
@@ -3052,57 +3015,14 @@
     $('vol').onchange = () => postAudioConfig();
     $('audioOn').onchange = () => postAudioConfig();
     $('testAudio').onclick = () => {
-      const isEsp = isEspCameraSelected();
-      if (!isEsp) {
-        $('audioStatus').textContent = 'Memutar tes suara di speaker laptop...';
-        const langF = currentLang() === 'en' ? '01' : '02';
-        playAlertAudio('001_not_focus.mp3', langF);
-        showVoiceToast('001', 'Tes suara diputar di speaker laptop', 'laptop');
-        setTimeout(() => {
-          $('audioStatus').textContent = 'Tes suara selesai.';
-        }, 1200);
-      } else {
-        $('audioStatus').textContent = 'Mengirim tes suara ke modul MP3 ESP32...';
-        postAPI('/api/audio/test', {}, (d) => {
-          $('audioStatus').textContent = (d && d.ok) ? 'Tes suara terkirim ke ESP32.' : 'Tes suara gagal. Cek kamera NARA dan pairing.';
-          if (d && d.ok) showVoiceToast('001', 'Tes suara terkirim ke modul MP3 ESP32', 'esp32');
-        });
-      }
+      $('audioStatus').textContent = 'Memutar tes suara di speaker laptop...';
+      const langF = currentLang() === 'en' ? '01' : '02';
+      playAlertAudio('001_not_focus.mp3', langF);
+      showVoiceToast('001', 'Tes suara diputar di speaker laptop', 'laptop');
+      setTimeout(() => {
+        $('audioStatus').textContent = 'Suara aktif melalui speaker laptop.';
+      }, 1500);
     };
-    // ── Sinkronisasi UI Tipe Kamera (Laptop vs ESP32) ──────────────────────────
-    function updateCamTypeUi(isEsp) {
-      if ($('btnTypeWebcam')) $('btnTypeWebcam').setAttribute('aria-pressed', isEsp ? 'false' : 'true');
-      if ($('btnTypeEsp')) $('btnTypeEsp').setAttribute('aria-pressed', isEsp ? 'true' : 'false');
-    }
-
-    if ($('btnTypeWebcam')) {
-      $('btnTypeWebcam').onclick = () => {
-        updateCamTypeUi(false);
-        const sel = $('cameraSelect');
-        if (!sel) return;
-        const webcamOpt = Array.from(sel.options).find(o => !o.value.startsWith('esp:'));
-        if (webcamOpt) {
-          sel.value = webcamOpt.value;
-          sel.dispatchEvent(new Event('change'));
-        }
-      };
-    }
-
-    if ($('btnTypeEsp')) {
-      $('btnTypeEsp').onclick = () => {
-        updateCamTypeUi(true);
-        const sel = $('cameraSelect');
-        if (!sel) return;
-        const espOpt = Array.from(sel.options).find(o => o.value.startsWith('esp:'));
-        if (espOpt) {
-          sel.value = espOpt.value;
-          sel.dispatchEvent(new Event('change'));
-        } else {
-          $('camHint').textContent = 'Mencari kamera NARA di jaringan Wi-Fi...';
-          $('scanCam').click();
-        }
-      };
-    }
 
     if ($('toggleManualIp')) {
       $('toggleManualIp').onclick = () => {
@@ -3144,7 +3064,6 @@
       const id = $('cameraSelect').value;
       if (!id) return;
       _selectedCam = id;
-      updateCamTypeUi(isEspCameraSelected());
       updateSoundBadge();
       $('camHint').textContent = 'Mengganti kamera...';
       postAPI('/api/camera/select', { id }, (d) => {

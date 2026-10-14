@@ -1,4 +1,4 @@
-#pragma once
+ #pragma once
 
 // =============================================================================
 // NARA ESP32-S3-CAM — pin & parameter yang sering diubah
@@ -40,18 +40,16 @@
 //   Pindahkan UART/tombol jika board-nya EYE, bukan ESP32-S3-CAM polos.
 // -----------------------------------------------------------------------------
 #ifndef MP3_UART_TX
-#define MP3_UART_TX 21
+#define MP3_UART_TX 43
 #endif
 #ifndef MP3_UART_RX
-#define MP3_UART_RX 14
+#define MP3_UART_RX 44
 #endif
 #define MP3_BAUD 9600
 
-// Tombol reset pabrik, active LOW ke GND. Tahan 5 detik.
-// Bukan pin EN/RST board (itu reset keras, firmware tidak sempat menghitung).
-// Bukan GPIO0/BOOT: ditahan saat boot akan masuk mode download.
+// Tombol reset pabrik, active LOW ke GND (GPIO 0 / BOOT). Tahan 5 detik.
 #ifndef RESET_BUTTON_PIN
-#define RESET_BUTTON_PIN 47
+#define RESET_BUTTON_PIN 0
 #endif
 #define RESET_HOLD_MS 5000
 
@@ -59,7 +57,6 @@
 // PENGATURAN KONEKSI WI-FI (PILIH SALAH SATU)
 // =============================================================================
 // Set 1: Koneksi langsung ke WiFi rumah / Hotspot HP (SANGAT MUDAH & CEPAT UNTUK DICOBA).
-//        Tinggal isi WIFI_SSID & WIFI_PASS di bawah, lalu flash ke ESP.
 // Set 0: Gunakan WiFiManager Captive Portal (ESP membuat Access Point "NARA-Setup-XXXX").
 #ifndef USE_DIRECT_WIFI
 #define USE_DIRECT_WIFI 1
@@ -67,12 +64,14 @@
 
 #if USE_DIRECT_WIFI
 #ifndef WIFI_SSID
-#define WIFI_SSID "NAMA_WIFI_KAMU"
+#define WIFI_SSID "seipa"
 #endif
 #ifndef WIFI_PASS
-#define WIFI_PASS "PASSWORD_WIFI_KAMU"
+#define WIFI_PASS "00000001"
 #endif
 #endif
+static const char *WM_SSID = "NARA-Setup";
+static const char *WM_PASS = "nara1234";
 
 // =============================================================================
 // IDENTITAS & HOSTNAME mDNS
@@ -85,12 +84,17 @@
 #define NARA_DEFAULT_HOSTNAME "nara-camera"
 
 // =============================================================================
+// HARDWARE AUDIO / DFPLAYER MINI
+// =============================================================================
+// Set 0 (DEFAULT): Modul MP3 hardware tidak digunakan (audio notifikasi 100% dari speaker laptop/browser).
+//        ESP32 tidak akan membuang waktu menunggu ACK UART DFPlayer saat boot, sehingga boot instan!
+#ifndef NARA_ENABLE_HARDWARE_MP3
+#define NARA_ENABLE_HARDWARE_MP3 0
+#endif
+
+// =============================================================================
 // TOLERANSI DFPLAYER & PENGUJIAN BENCH (TANPA MODUL MP3)
 // =============================================================================
-// Set 1: Jika modul DFPlayer Mini belum terpasang atau SD Card belum siap,
-//        firmware tetap merespons /play dan /api/alert dengan HTTP 200/202 (mock),
-//        dan menulis info ke Serial Monitor. Kamera dan Web App tetap lancar!
-// Set 0: Wajib modul DFPlayer fisik merespons ACK via UART.
 #ifndef NARA_TOLERANT_MP3
 #define NARA_TOLERANT_MP3 1
 #endif
@@ -145,29 +149,28 @@
    (p) == 17 || (p) == 18 || (p) == 38 || (p) == 39 || (p) == 40 || (p) == 47 || (p) == 48)
 
 #elif NARA_CAMERA_BOARD == 1
-// ESP32-S3-CAM / Freenove ESP32-S3-CAM / ESP32-S3-EYE (pin kamera identik).
-// Bukan map "ESP32-S3-CAM-LCD" (XCLK di GPIO40). Kalau skema board Anda beda,
-// jangan dipaksa: salin pin dari skema ke blok ini.
-#define PWDN_GPIO_NUM -1
-#define RESET_GPIO_NUM -1
-#define XCLK_GPIO_NUM 15
-#define SIOD_GPIO_NUM 4
-#define SIOC_GPIO_NUM 5
-#define Y9_GPIO_NUM 16
-#define Y8_GPIO_NUM 17
-#define Y7_GPIO_NUM 18
-#define Y6_GPIO_NUM 12
-#define Y5_GPIO_NUM 10
-#define Y4_GPIO_NUM 8
-#define Y3_GPIO_NUM 9
-#define Y2_GPIO_NUM 11
-#define VSYNC_GPIO_NUM 6
-#define HREF_GPIO_NUM 7
-#define PCLK_GPIO_NUM 13
+// Pin Kamera kustom sesuai modul ESP32-S3 OV3660 pengguna
+#define PWDN_GPIO_NUM   -1
+#define RESET_GPIO_NUM  -1
+#define XCLK_GPIO_NUM   5
+#define SIOD_GPIO_NUM   8
+#define SIOC_GPIO_NUM   9
+#define Y9_GPIO_NUM     4
+#define Y8_GPIO_NUM     6
+#define Y7_GPIO_NUM     7
+#define Y6_GPIO_NUM     14
+#define Y5_GPIO_NUM     17
+#define Y4_GPIO_NUM     21
+#define Y3_GPIO_NUM     18
+#define Y2_GPIO_NUM     16
+#define VSYNC_GPIO_NUM  1
+#define HREF_GPIO_NUM   2
+#define PCLK_GPIO_NUM   15
+#define LED_GPIO_NUM    47
 
 #define NARA_CAM_CONFLICT(p)                                                                 \
-  ((p) == 4 || (p) == 5 || (p) == 6 || (p) == 7 || (p) == 8 || (p) == 9 || (p) == 10 ||      \
-   (p) == 11 || (p) == 12 || (p) == 13 || (p) == 15 || (p) == 16 || (p) == 17 || (p) == 18)
+  ((p) == 1 || (p) == 2 || (p) == 4 || (p) == 5 || (p) == 6 || (p) == 7 || (p) == 8 ||      \
+   (p) == 9 || (p) == 14 || (p) == 15 || (p) == 16 || (p) == 17 || (p) == 18 || (p) == 21 || (p) == 47)
 
 #else
 #error "NARA_CAMERA_BOARD tidak dikenal. Pakai 1 (ESP32-S3-CAM/Freenove) atau 3 (XIAO)."

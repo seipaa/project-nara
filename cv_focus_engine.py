@@ -58,7 +58,7 @@ PITCH_LOOK_DOWN_DEG = -15.0       # Menunduk ke bawah < -15° (lihat meja/paha) 
 
 # --- Threshold Pandangan Mata (Gaze Blendshapes 0.0 - 1.0) ---
 GAZE_LOOK_UP_THRESHOLD = 0.35     # Mata menatap ke atas (bisa berpikir atau melamun)
-GAZE_LOOK_DOWN_THRESHOLD = 0.40   # Mata menatap ke bawah (main HP di tangan/meja)
+GAZE_LOOK_DOWN_THRESHOLD = 0.40   # Mata menatap ke bawah
 GAZE_LOOK_SIDE_THRESHOLD = 0.45   # Mata melirik ke samping
 
 # --- Threshold Mata Terpejam / Tidur (High Precision Dual-Signal) ---
@@ -823,14 +823,14 @@ class MultiModalFocusStateMachine:
                 else:
                     self.thinking_since = None
 
-                    # 7. Deteksi Pandangan Mata ke Bawah (Main HP / Meja saat kepala lurus)
+                    # 7. Deteksi Pandangan Mata ke Bawah
                     if look_down_score > GAZE_LOOK_DOWN_THRESHOLD:
                         if self.phone_gaze_since is None:
                             self.phone_gaze_since = now
                         phone_duration = now - self.phone_gaze_since
                         if phone_duration >= PHONE_DISTRACTION_SEC:
                             instant_flag = "NOT_FOCUSED"
-                            instant_reason = f"Pandangan ke Bawah (Main HP/Meja {int(look_down_score*100)}%)"
+                            instant_reason = f"Pandangan ke Bawah ({int(look_down_score*100)}%)"
                         else:
                             instant_reason = f"Melirik ke Bawah ({phone_duration:.1f}s)"
                     else:

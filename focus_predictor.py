@@ -206,7 +206,7 @@ class FocusPredictor:
                 if abs(yaw) > YAW_THRESHOLD_DEG:
                     reason = "Menoleh ke Samping"
                 elif pitch < PITCH_LOOK_DOWN_DEG or gaze_down > GAZE_LOOK_DOWN_THRESHOLD:
-                    reason = "Menunduk / Main HP"
+                    reason = "Menunduk"
                 elif pitch > PITCH_LOOK_UP_DEG or gaze_up > GAZE_LOOK_UP_THRESHOLD:
                     if self.look_up_start_time is None:
                         self.look_up_start_time = now

@@ -128,10 +128,10 @@ class DeviceDiscovery(ServiceListener):
             stream_port = int(stream_port)
         except ValueError:
             stream_port = 81
-        server = (getattr(info, "server", None) or name or "").rstrip(".")
+        mdns_name = _prop(info, "name")
         self.upsert({
             "id": str(device_id),
-            "name": server or f"nara-cam-{device_id}",
+            "name": mdns_name or "NARA Device",
             "ip": ip,
             "stream_port": stream_port,
             "paired": _prop(info, "paired").lower() in ("1", "true", "yes"),
@@ -222,7 +222,7 @@ class DeviceDiscovery(ServiceListener):
         ip = str(info.get("ip") or addr[0]).strip()
         self.upsert({
             "id": info.get("id") or ip,
-            "name": info.get("name") or f"nara-cam-{info.get('id') or ip}",
+            "name": info.get("name") or "NARA Device",
             "ip": ip,
             "stream_port": info.get("stream_port") or 81,
             "paired": bool(info.get("paired", False)),
@@ -264,9 +264,10 @@ def probe_webcams(indexes=range(4), active_index=None):
     cameras = []
     for index in indexes:
         source = str(index)
+        display_name = "Kamera Terintegrasi" if int(index) == 0 else f"Kamera {index}"
         item = {
             "id": f"webcam:{index}",
-            "name": f"Webcam {index}",
+            "name": display_name,
             "kind": "webcam",
             "source": source,
             "index": index,

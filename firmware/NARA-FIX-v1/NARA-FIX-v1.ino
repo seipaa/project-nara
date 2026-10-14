@@ -26,7 +26,9 @@
 #include "esp_system.h"
 #include "esp_arduino_version.h"
 
+//own libraries
 #include "config.h"
+#include "User_Interface.h"
 #include "nara_stream.h"
 
 // Ukuran frame sensor. QVGA (320x240) paling stabil untuk satu klien MJPEG.
@@ -44,7 +46,7 @@ using NaraDoc = StaticJsonDocument<512>;
 static WebServer server(NARA_HTTP_PORT);
 static WebServer alertServer(NARA_ALERT_PORT);
 static WiFiUDP udp;
-static WiFiManager wifiManager;
+static WiFiManager wm;
 static Preferences prefs;
 static HardwareSerial mp3Serial(1);
 static DFRobotDFPlayerMini player;
@@ -126,7 +128,7 @@ static void buildIdentity() {
   snprintf(hostname, sizeof(hostname), "nara-cam-%s", suffix);
 #endif
   snprintf(apName, sizeof(apName), "NARA-Setup-%s", suffixUp);
-  snprintf(deviceName, sizeof(deviceName), "NARA Cam %s", suffixUp);
+  snprintf(deviceName, sizeof(deviceName), "NARA Device");
 }
 
 static void makeToken() {
@@ -240,37 +242,60 @@ static void initCamera() {
   config.pin_pwdn = (gpio_num_t)PWDN_GPIO_NUM;
   config.pin_reset = (gpio_num_t)RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
+  // Inisialisasi awal sensor dengan UXGA wajib untuk probe OV3660/OV2640
+  config.frame_size = FRAMESIZE_UXGA;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.grab_mode = CAMERA_GRAB_LATEST;
+  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.jpeg_quality = 12;
+  config.fb_count = 1;
 
   if (psramFound()) {
-    config.frame_size = NARA_FRAME_SIZE;
-    config.jpeg_quality = NARA_JPEG_QUALITY;
+    config.jpeg_quality = 10;
     config.fb_count = 2;
-    config.fb_location = CAMERA_FB_IN_PSRAM;
-    Serial.printf("[cam] PSRAM %u byte, frame %d\n", (unsigned)ESP.getPsramSize(), (int)NARA_FRAME_SIZE);
+    config.grab_mode = CAMERA_GRAB_LATEST;
+    Serial.printf("[cam] PSRAM %u byte terdeteksi\n", (unsigned)ESP.getPsramSize());
   } else {
-    // Tanpa PSRAM, VGA mudah gagal alokasi. Paksa QVGA satu buffer di DRAM.
-    config.frame_size = FRAMESIZE_QVGA;
-    config.jpeg_quality = 16;
-    config.fb_count = 1;
+    // Tanpa PSRAM, fallback ke SVGA internal DRAM
+    config.frame_size = FRAMESIZE_SVGA;
     config.fb_location = CAMERA_FB_IN_DRAM;
-    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-    Serial.println("[cam] PSRAM tidak ketemu. Aktifkan OPI PSRAM di Arduino IDE, atau coba mode QSPI.");
+    Serial.println("[cam] PSRAM tidak ketemu. Pastikan opsi 'PSRAM: OPI PSRAM' aktif di Arduino IDE!");
   }
+
+  // Berikan waktu sensor kamera untuk stabilisasi daya (power rail settling)
+  delay(200);
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
+    // Coba fallback dengan frekuensi XCLK 10MHz (sangat membantu modul OV3660 / kabel pita panjang)
+    Serial.printf("[cam] Init 20MHz gagal (0x%x). Mencoba frekuensi XCLK 10MHz...\n", err);
+    esp_camera_deinit();
+    delay(100);
+    config.xclk_freq_hz = 10000000;
+    err = esp_camera_init(&config);
+  }
+
+  if (err != ESP_OK) {
     cameraReady = false;
-    Serial.printf("[cam] init gagal: %s\n", esp_err_to_name(err));
+    Serial.printf("[cam] init gagal: 0x%x (%s)\n", err, esp_err_to_name(err));
     return;
   }
+
   cameraReady = true;
-  // Gambar terbalik? Aktifkan salah satu baris ini, jangan keduanya sekaligus
-  // kecuali hasil uji memang butuh keduanya.
-  // sensor_t *sensor = esp_camera_sensor_get();
-  // sensor->set_vflip(sensor, 1);
-  // sensor->set_hmirror(sensor, 1);
+
+  sensor_t *s = esp_camera_sensor_get();
+  if (s != NULL) {
+    // Optimasi khusus sensor OV3660 (flip vertikal & saturasi)
+    if (s->id.PID == OV3660_PID) {
+      s->set_vflip(s, 1);
+      s->set_brightness(s, 1);
+      s->set_saturation(s, -2);
+      Serial.println("[cam] Sensor OV3660 terdeteksi & terkonfigurasi!");
+    }
+    // Turunkan resolusi ke NARA_FRAME_SIZE (QVGA) untuk streaming stabil
+    s->set_framesize(s, NARA_FRAME_SIZE);
+    Serial.printf("[cam] Resolusi streaming diset ke frame_size=%d\n", (int)NARA_FRAME_SIZE);
+  }
 }
 
 static void handleInfo() {
@@ -620,7 +645,7 @@ static void factoryReset() {
   prefs.remove("token");
   prefs.end();
   token[0] = '\0';
-  wifiManager.resetSettings();
+  wm.resetSettings();
   WiFi.disconnect(true, true);
   delay(300);
   ESP.restart();
@@ -691,7 +716,7 @@ static void tryStartServices() {
 
   static bool settling = false;
   static uint32_t readySince = 0;
-  bool ready = (WiFi.status() == WL_CONNECTED) && !wifiManager.getConfigPortalActive();
+  bool ready = (WiFi.status() == WL_CONNECTED) && !wm.getConfigPortalActive();
   if (!ready) {
     settling = false;
     return;
@@ -714,16 +739,17 @@ static void tryStartServices() {
 
     // Layanan discovery untuk device_discovery.py
     MDNS.addService("nara", "tcp", NARA_HTTP_PORT);
-    MDNS.addServiceTxt("nara", "tcp", "id", deviceId);
-    MDNS.addServiceTxt("nara", "tcp", "stream_port", portTxt);
-    MDNS.addServiceTxt("nara", "tcp", "alert_port", alertTxt);
-    MDNS.addServiceTxt("nara", "tcp", "fw", NARA_FW_VERSION);
-    MDNS.addServiceTxt("nara", "tcp", "paired", isPaired() ? "1" : "0");
+    auto addTxt = [](const char *name, const char *proto, const char *key, const char *value) {
+      MDNS.addServiceTxt((char *)name, (char *)proto, (char *)key, (char *)value);
+    };
+    addTxt("nara", "tcp", "id", (const char *)deviceId);
+    addTxt("nara", "tcp", "stream_port", (const char *)portTxt);
+    addTxt("nara", "tcp", "alert_port", (const char *)alertTxt);
+    addTxt("nara", "tcp", "fw", (const char *)NARA_FW_VERSION);
+    addTxt("nara", "tcp", "paired", (const char *)(isPaired() ? "1" : "0"));
 
-    // Standard HTTP services
+    // Standard HTTP service (Cukup satu agar tidak memicu error duplicate service ESP-IDF)
     MDNS.addService("http", "tcp", NARA_HTTP_PORT);
-    MDNS.addService("http", "tcp", NARA_STREAM_PORT);
-    MDNS.addService("http", "tcp", NARA_ALERT_PORT);
     Serial.printf("[mdns] %s.local _nara._tcp port %d (stream:%d alert:%d)\n",
                   hostname, NARA_HTTP_PORT, NARA_STREAM_PORT, NARA_ALERT_PORT);
   } else {
@@ -782,6 +808,7 @@ void setup() {
   loadPrefs();
 
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   buildIdentity();
   Serial.printf("[pin] Board=%d  UART TX=%d RX=%d  Tombol=%d\n", NARA_CAMERA_BOARD, MP3_UART_TX,
                 MP3_UART_RX, RESET_BUTTON_PIN);
@@ -789,9 +816,14 @@ void setup() {
 
   initCamera();
 
+#if NARA_ENABLE_HARDWARE_MP3
   mp3Serial.begin(MP3_BAUD, SERIAL_8N1, MP3_UART_RX, MP3_UART_TX);
   delay(100);
   ensureMp3(true);
+#else
+  mp3Ready = false;
+  Serial.println("[mp3] Hardware MP3 dinonaktifkan (audio ditangani laptop)");
+#endif
 
 #if USE_DIRECT_WIFI
   Serial.printf("[wifi] Menghubungkan langsung ke SSID '%s'...\n", WIFI_SSID);
@@ -806,34 +838,33 @@ void setup() {
     Serial.printf("[wifi] TERHUBUNG! IP ESP: %s\n", WiFi.localIP().toString().c_str());
     tryStartServices();
   } else {
-    Serial.println("[wifi] Gagal konek langsung ke SSID. Mengaktifkan WiFiManager AP...");
-    wifiManager.setDebugOutput(true);
-    wifiManager.setTitle("NARA");
-    wifiManager.setHostname(hostname);
-    wifiManager.setConfigPortalBlocking(false);
-    wifiManager.setConnectTimeout(20);
-    wifiManager.setConfigPortalTimeout(0);
-    wifiManager.setWiFiAutoReconnect(true);
-    wifiManager.autoConnect(apName);
+    Serial.println("[wifi] Gagal konek langsung ke SSID. Mengaktifkan wm AP...");
+    wm.setDebugOutput(true);
+    wm.setHostname(hostname);
+    wm.setConfigPortalBlocking(false);
+    wm.setConnectTimeout(20);
+    wm.setConfigPortalTimeout(0);
+    wm.setWiFiAutoReconnect(true);
+    wm.autoConnect(apName);
   }
 #else
-  wifiManager.setDebugOutput(true);
-  wifiManager.setTitle("NARA");
-  wifiManager.setHostname(hostname);
-  wifiManager.setConfigPortalBlocking(false);
-  wifiManager.setConnectTimeout(20);
-  wifiManager.setConfigPortalTimeout(0);
-  wifiManager.setWiFiAutoReconnect(true);
-  wifiManager.autoConnect(apName);
+  setParameterUI(wm);
+  wm.autoConnect( WM_SSID, WM_PASS);
+  wm.setDebugOutput(true);
+  wm.setHostname(hostname);
+  wm.setConfigPortalBlocking(false);
+  wm.setConnectTimeout(180);
+  wm.setConfigPortalTimeout(0);
+  wm.setWiFiAutoReconnect(true);
 #endif
 }
 
 void loop() {
 #if !USE_DIRECT_WIFI
-  wifiManager.process();
+  wm.process();
 #else
   if (WiFi.status() != WL_CONNECTED) {
-    wifiManager.process();
+    wm.process();
   }
 #endif
   tryStartServices();

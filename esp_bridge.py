@@ -58,22 +58,11 @@ class EspBridge:
             self._client = None
 
     def _on_pomodoro_event(self, payload):
-        loop = self._loop
-        queue = self._queue
-        if loop is None or queue is None:
-            return
-        try:
-            loop.call_soon_threadsafe(self._push, payload)
-        except RuntimeError:
-            pass
+        # Seluruh audio notifikasi NARA kini dialihkan ke speaker laptop
+        pass
 
     def _push(self, payload):
-        if self._queue is None:
-            return
-        try:
-            self._queue.put_nowait(payload)
-        except asyncio.QueueFull:
-            pass
+        pass
 
     def public_status(self):
         device = self.device or {}
@@ -87,6 +76,7 @@ class EspBridge:
             "language": self.language,
             "volume": self.volume,
             "audio_enabled": self.audio_enabled,
+            "sound_target": "laptop",
             "last_event": self._last_event,
         }
 
@@ -120,11 +110,8 @@ class EspBridge:
         return self.public_status()
 
     async def test_audio(self):
-        """Putar track SESSION_START sebagai tes suara, meski audio sesi dimatikan."""
-        if not self.device:
-            return {"ok": False, "error": "no_device"}
-        ok = await self._post_play("SESSION_START", force=True)
-        return {"ok": ok, "device": self.public_status()}
+        """Tes suara mandiri dialihkan ke speaker laptop."""
+        return {"ok": True, "target": "laptop", "device": self.public_status()}
 
     async def _ensure_client(self):
         if self._client is None:

@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include <string.h>
-#include <stdio.h>
+#include <stdio.h> 
 
 #include "esp_camera.h"
 #include "esp_http_server.h"
