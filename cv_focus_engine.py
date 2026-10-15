@@ -23,6 +23,7 @@ Tekan 'q' atau klik tombol [X] untuk keluar.
 
 import argparse
 import http.client
+import json
 import math
 import os
 import queue
@@ -320,11 +321,13 @@ class VideoSource:
 
         ip = VideoSource._resolve_local_hostname(hostname, timeout)
         if not ip:
+            ip, port = VideoSource._quick_udp_discover(timeout=0.8)
+        if not ip:
             print(f"[WARN] mDNS {hostname} belum ditemukan; periksa Wi-Fi dan firmware ESP32.")
             return urlunsplit(parsed_url)
 
         resolved = VideoSource._replace_host(parsed_url, ip)
-        print(f"[INFO] mDNS {hostname} ditemukan di {ip}; NARA memakai {resolved}")
+        print(f"[INFO] mDNS/UDP {hostname} ditemukan di {ip}; NARA memakai {resolved}")
         return resolved
 
     @staticmethod
@@ -385,6 +388,45 @@ class VideoSource:
                 zc.close()
         return None
 
+    @staticmethod
+    def _quick_udp_discover(timeout=0.6):
+        """Kirim broadcast NARA_DISCOVER untuk mencari IP terbaru kamera NARA."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            sock.bind(("", 0))
+            sock.settimeout(0.2)
+            targets = ["255.255.255.255"]
+            try:
+                host = socket.gethostbyname(socket.gethostname())
+                parts = host.split(".")
+                if len(parts) == 4 and not host.startswith("127."):
+                    targets.append(".".join(parts[:3] + ["255"]))
+            except Exception:
+                pass
+            for t in targets:
+                try:
+                    sock.sendto(b"NARA_DISCOVER", (t, 4210))
+                except Exception:
+                    pass
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                try:
+                    data, addr = sock.recvfrom(2048)
+                    info = json.loads(data.decode("utf-8", errors="replace"))
+                    if isinstance(info, dict) and info.get("ip"):
+                        return str(info["ip"]).strip(), int(info.get("stream_port") or 81)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+        return None, None
+
     def _open_capture(self, source):
         if isinstance(source, int):
             if sys.platform == "win32":
@@ -439,6 +481,18 @@ class VideoSource:
                     cap = new_cap
                 if cap is None or not cap.isOpened():
                     print("[WARN] Gagal ambil frame (WiFi/stream putus?), reconnecting...")
+                    if isinstance(source, str) and ("http" in source and ":81" in source):
+                        new_ip, new_port = self._quick_udp_discover(timeout=0.6)
+                        if new_ip:
+                            parsed = urlsplit(source)
+                            if parsed.hostname != new_ip:
+                                new_source = self._replace_host(parsed, new_ip, new_port)
+                                print(f"[INFO] 🔄 Auto-Discovery: Kamera NARA terdeteksi di {new_ip}! Mengalihkan stream otomatis...")
+                                with self._cond:
+                                    self.source = new_source
+                                    source = new_source
+                                    self._generation += 1
+                                    generation = self._generation
                     self._sleep_backoff()
                     continue
                 self._backoff = self.reconnect_delay
@@ -450,6 +504,18 @@ class VideoSource:
                 ok, frame = False, None
             if not ok or frame is None:
                 print("[WARN] Gagal ambil frame (WiFi/stream putus?), reconnecting...")
+                if isinstance(source, str) and ("http" in source and ":81" in source):
+                    new_ip, new_port = self._quick_udp_discover(timeout=0.6)
+                    if new_ip:
+                        parsed = urlsplit(source)
+                        if parsed.hostname != new_ip:
+                            new_source = self._replace_host(parsed, new_ip, new_port)
+                            print(f"[INFO] 🔄 Auto-Discovery: Kamera NARA terdeteksi di {new_ip}! Mengalihkan stream otomatis...")
+                            with self._cond:
+                                self.source = new_source
+                                source = new_source
+                                self._generation += 1
+                                generation = self._generation
                 with self._cond:
                     if self._cap is cap and self._cap is not None:
                         self._cap.release()

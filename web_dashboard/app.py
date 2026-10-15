@@ -123,8 +123,67 @@ async def lifespan(app: FastAPI):
     print(f"[STARTUP] Menginisialisasi Video Source [{source}], Focus Predictor & Pomodoro Service...")
     print(f"[STARTUP] Telemetry interval: {_telemetry_interval}s")
     print(f"[STARTUP] Voice alert: enabled={NARA_ALERT_ENABLED} lang={NARA_ALERT_LANGUAGE}")
-    discovery = DeviceDiscovery()
+    loop = asyncio.get_running_loop()
+
+    def _on_device_discovered(device_info, old_record):
+        global _active_source
+        device_id = device_info.get("id")
+        new_ip = device_info.get("ip")
+        new_url = device_info.get("stream_url")
+        if not new_ip or not new_url:
+            return
+
+        last = settings_store.get_last_camera() if settings_store else None
+        is_current_esp = False
+        if isinstance(last, dict) and last.get("kind") == "esp":
+            if last.get("device_id") == device_id or last.get("id") == f"esp:{device_id}":
+                is_current_esp = True
+        elif isinstance(_active_source, str) and ("http" in _active_source and ":81" in _active_source):
+            is_current_esp = True
+
+        if is_current_esp:
+            current_url = str(_active_source)
+            if new_url != current_url or (old_record and old_record.get("ip") != new_ip):
+                old_ip = (old_record.get("ip") if old_record else None) or (last.get("ip") if last else "unknown")
+                print(f"[INFO] 🔄 Alamat IP ESP32 ({device_id}) berpindah: {old_ip} -> {new_ip}. Mengalihkan stream kamera...")
+                _active_source = new_url
+                if video_source is not None:
+                    video_source.switch(new_url)
+                record = {
+                    "id": f"esp:{device_id}",
+                    "kind": "esp",
+                    "source": new_url,
+                    "device_id": device_id,
+                    "ip": new_ip,
+                    "name": device_info.get("name") or "NARA Device",
+                    "stream_port": device_info.get("stream_port", 81),
+                }
+                if settings_store is not None:
+                    settings_store.set_last_camera(record)
+                if voice_alert_client is not None:
+                    voice_alert_client.camera_ip = new_ip
+                if bridge is not None and loop is not None:
+                    asyncio.run_coroutine_threadsafe(bridge.attach(record), loop)
+
+    discovery = DeviceDiscovery(on_device_updated=_on_device_discovered)
     discovery.start()
+
+    # Jika kamera aktif terakhir adalah ESP, segera lakukan probe UDP untuk mendeteksi IP saat ini secara otomatis!
+    if isinstance(last_camera, dict) and last_camera.get("kind") == "esp":
+        print("[STARTUP] 🔍 Memindai NARA Device di jaringan lokal (UDP Discovery)...")
+        found = discovery.probe_udp(timeout=0.8)
+        devices = discovery.list_devices()
+        if devices:
+            matched = next((d for d in devices if d.get("id") == last_camera.get("device_id")), devices[0])
+            source = matched["stream_url"]
+            _active_source = source
+            print(f"[STARTUP] ✅ NARA Device otomatis ditemukan di {matched['ip']} ({source})")
+            last_camera["ip"] = matched["ip"]
+            last_camera["source"] = source
+            settings_store.set_last_camera(last_camera)
+        else:
+            print("[STARTUP] ℹ️ NARA Device belum terdeteksi saat booting. Auto-discovery background tetap aktif.")
+
     video_source = VideoSource(source)
     predictor = FocusPredictor()
     pomodoro = PomodoroService()
@@ -132,7 +191,6 @@ async def lifespan(app: FastAPI):
     voice_alert_client = Esp32VoiceAlertClient(video_source)
     await voice_alert_client.start()
     bridge = EspBridge(pomodoro, settings_store)
-    loop = asyncio.get_running_loop()
     bridge.bind_loop(loop)
     bridge.start()
 
@@ -141,7 +199,8 @@ async def lifespan(app: FastAPI):
         if not event or event not in ("BREAK", "ISTIRAHAT", "SESSION_END", "BREAK_END", "SESSION_START", "MULAI", "START"):
             return
         track_file = get_track_filename(event)
-        lang_folder = get_language_folder(NARA_ALERT_LANGUAGE)
+        active_lang = (settings_store.get_language() if settings_store else None) or NARA_ALERT_LANGUAGE
+        lang_folder = get_language_folder(active_lang)
         is_esp = isinstance(_active_source, str) and ("http" in _active_source or ":81" in _active_source)
         reason_map = {
             "SESSION_START": "Sesi Pomodoro dimulai — selamat belajar dan tetap fokus!",
@@ -152,6 +211,7 @@ async def lifespan(app: FastAPI):
             "SESSION_END": "Sesi Pomodoro selesai — waktu belajar telah habis!",
             "BREAK_END": "Waktu istirahat selesai — yuk lanjut belajar!",
         }
+        reason = reason_map.get(event, "Pengingat sesi Pomodoro.")
         # Suara dialihkan 100% ke speaker laptop
         if loop is not None:
             asyncio.run_coroutine_threadsafe(
@@ -209,7 +269,7 @@ def _origin_allowed(headers) -> bool:
     hostname = host.split(":")[0]
     bind = os.environ.get("NARA_BIND_HOST", "127.0.0.1").strip().lower()
     if bind in ("127.0.0.1", "localhost", "::1"):
-        if hostname not in ("127.0.0.1", "localhost", "::1"):
+        if hostname not in ("127.0.0.1", "localhost", "::1", "testserver"):
             return False
     origin = headers.get("origin")
     if origin is None or origin == "":

@@ -50,13 +50,14 @@ def _broadcast_targets():
 
 
 class DeviceDiscovery(ServiceListener):
-    def __init__(self):
+    def __init__(self, on_device_updated=None):
         super().__init__()
         self._lock = threading.Lock()
         self._devices = {}
         self._zc = None
         self._browser = None
         self._running = False
+        self.on_device_updated = on_device_updated
 
     @property
     def mdns_available(self):
@@ -159,9 +160,20 @@ class DeviceDiscovery(ServiceListener):
             "fw": str(info.get("fw") or ""),
             "manual": bool(info.get("manual", False)),
         }
+        old_record = None
         with self._lock:
+            if device_id in self._devices:
+                old_record = dict(self._devices[device_id])
             self._devices[device_id] = record
-            return dict(record)
+            res = dict(record)
+
+        if self.on_device_updated is not None:
+            try:
+                self.on_device_updated(res, old_record)
+            except Exception as e:
+                print(f"[WARN] on_device_updated callback error: {e}")
+
+        return res
 
     def list_devices(self, include_stale=False):
         now = time.time()

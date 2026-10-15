@@ -2476,6 +2476,7 @@
       _ending = true;
       S.run = false; S.mode = 'idle'; flush();
       camOff('Sesi selesai. Kamera dimatikan.');
+      triggerSessionEndAudio();
       postAPI('/api/pomodoro/end', null, () => setTimeout(loadHistory, 600));
       renderSum({ scores: S.scores, mins: Math.round(S.elapsed / 60), elapsed: S.elapsed, dist: S.dist, yawn: S.yawn, longest: S.longest, distrLog: { ...S.distrLog }, label: S.label });
       show('sum');
@@ -2857,6 +2858,7 @@
     let _voiceToastTimer = null;
     let _lastBreakAudioTs = 0;
     let _lastStartAudioTs = 0;
+    let _lastEndAudioTs = 0;
     const VOICE_MESSAGES = {
       '001': 'Fokus berkurang — yuk kembali perhatikan materi!',
       '002': 'Sesi Pomodoro selesai — waktu belajar telah habis!',
@@ -2897,6 +2899,16 @@
       showVoiceToast('003', 'Waktunya istirahat sejenak — regangkan badan dan istirahatkan mata!', 'laptop');
     }
 
+    function triggerSessionEndAudio() {
+      const now = Date.now();
+      if (now - _lastEndAudioTs < 3000) return;
+      _lastEndAudioTs = now;
+      const lang = currentLang();
+      const folder = lang === 'en' ? '01' : '02';
+      playAlertAudio('002_waktu_habis.mp3', folder);
+      showVoiceToast('002', 'Sesi Pomodoro selesai — waktu belajar telah habis!', 'laptop');
+    }
+
     function showVoiceToast(code, reason, soundTarget) {
       const toast = $('voiceToast');
       const msgEl = $('voiceToastMsg');
@@ -2932,6 +2944,11 @@
         if (now - _lastStartAudioTs < 3000) return;
         _lastStartAudioTs = now;
         _startAudioLockUntil = now + 5000;
+      }
+      if (code === 'SESSION_END' || code === 'WAKTU_HABIS' || String(data.track).includes('002')) {
+        const now = Date.now();
+        if (now - _lastEndAudioTs < 3000) return;
+        _lastEndAudioTs = now;
       }
 
       // Suppress peringatan distraksi (001) selama 10 detik awal setelah sesi start
