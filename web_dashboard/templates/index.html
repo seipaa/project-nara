@@ -2189,6 +2189,12 @@
       if (pomo) applyPomo(pomo);
       if (data.device) applyDevice(data.device);
       if (data.type === 'voice_alert') handleVoiceAlert(data);
+      if (data.type === 'camera_auto_switched') {
+        if (data.camera && data.camera.id) {
+          _selectedCam = data.camera.id;
+        }
+        loadCameras();
+      }
     }
 
     // ── Definisi metrik CV ─────────────────────────────────────────────────────
@@ -2445,6 +2451,12 @@
         setTimeout(() => { mapelEl.style.outline = ''; }, 2000);
         return;
       }
+      // Pastikan backend mengunci kamera yang aktif di UI (#cameraSelect)
+      const selCam = $('cameraSelect') ? $('cameraSelect').value : _selectedCam;
+      if (selCam) {
+        postAPI('/api/camera/select', { id: selCam });
+      }
+
       resetStats();
       const mapel = (mapelEl && mapelEl.value) ? mapelEl.value : 'Belajar';
       S.label = mapel + ', ' + S.focusMin + ' menit';
@@ -2713,18 +2725,35 @@
     function fillCameraSelect(cameras, selectedId) {
       const sel = $('cameraSelect');
       if (!sel) return;
-      // Hanya tampilkan webcam dan kamera yang terdeteksi
       _cameras = (cameras || []).filter(c => c.available !== false);
-      const current = selectedId || sel.value || _selectedCam;
+
+      // Cari kamera ESP (NARA Device)
+      const espCam = _cameras.find(c => c.kind === 'esp' || String(c.id).startsWith('esp:'));
+
+      // Jika ada ESP, dan pilihan saat ini kosong atau webcam, prioritaskan ESP!
+      let target = selectedId || _selectedCam || sel.value;
+      if (espCam && (!target || target.startsWith('webcam:') || !_selectedCam || _selectedCam.startsWith('webcam:'))) {
+        target = espCam.id;
+      }
+
       sel.innerHTML = _cameras.length
         ? _cameras.map(cam => `<option value="${esc(cam.id)}">${esc(cam.name || cam.id)}</option>`).join('')
         : '<option value="">Tidak ada kamera terdeteksi</option>';
-      if (current && Array.from(sel.options).some(o => o.value === current)) {
-        sel.value = current;
+
+      if (target && Array.from(sel.options).some(o => o.value === target)) {
+        sel.value = target;
       } else if (_cameras.length > 0) {
         sel.value = _cameras[0].id;
       }
+
+      const prev = _selectedCam;
       _selectedCam = sel.value;
+
+      // Jika auto-select memilih ESP dan sebelumnya belum tersinkron, kunci ke server!
+      if (_selectedCam && _selectedCam.startsWith('esp:') && (!prev || prev.startsWith('webcam:') || prev !== _selectedCam)) {
+        console.log('[CAMERA] 🎯 Auto-prioritizing NARA Device:', _selectedCam);
+        postAPI('/api/camera/select', { id: _selectedCam });
+      }
     }
 
     async function loadCameras() {

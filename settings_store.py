@@ -11,10 +11,20 @@ import threading
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_PATH = os.path.join(ROOT_DIR, "settings.json")
 
+DEFAULT_CAMERA = {
+    "id": "esp:nara-cam-0000",
+    "kind": "esp",
+    "source": "http://nara-camera.local:81/stream",
+    "device_id": "nara-cam-0000",
+    "ip": "",
+    "name": "NARA Device",
+    "stream_port": 81,
+}
+
 DEFAULTS = {
-    "last_camera": None,
+    "last_camera": DEFAULT_CAMERA,
     "language": "id",
-    "volume": 20,
+    "volume": 25,
     "audio_enabled": True,
     "tokens": {},
 }
@@ -27,18 +37,16 @@ class SettingsStore:
         self._data = self._load()
 
     def _load(self):
-        data = {
-            "last_camera": None,
-            "language": "id",
-            "volume": 20,
-            "audio_enabled": True,
-            "tokens": {},
-        }
+        data = dict(DEFAULTS)
+        data["last_camera"] = dict(DEFAULT_CAMERA)
+        data["tokens"] = {}
         try:
             with open(self.path, "r", encoding="utf-8") as fh:
                 raw = json.load(fh)
             if isinstance(raw, dict):
                 data.update({k: raw[k] for k in data if k in raw})
+                if not isinstance(data.get("last_camera"), dict):
+                    data["last_camera"] = dict(DEFAULT_CAMERA)
                 if not isinstance(data["tokens"], dict):
                     data["tokens"] = {}
         except (OSError, json.JSONDecodeError):

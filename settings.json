@@ -1,0 +1,15 @@
+{
+  "last_camera": {
+    "id": "esp:nara-cam-0000",
+    "kind": "esp",
+    "source": "",
+    "device_id": "nara-cam-0000",
+    "ip": "",
+    "name": "NARA Device",
+    "stream_port": 81
+  },
+  "language": "id",
+  "volume": 25,
+  "audio_enabled": true,
+  "tokens": {}
+}

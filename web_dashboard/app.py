@@ -92,7 +92,7 @@ _webcam_cache = {"ts": 0.0, "items": []}
 
 
 def _resolve_startup_source(settings: SettingsStore):
-    """--source menang. Tanpa argumen: kamera terakhir di settings, lalu webcam 0."""
+    """--source menang. Tanpa argumen: kamera terakhir di settings, lalu None (probe UDP)."""
     if os.environ.get("NARA_SOURCE_OVERRIDE") == "1":
         return os.environ.get("CAMERA_SOURCE", "0"), None
     last = settings.get_last_camera()
@@ -101,7 +101,7 @@ def _resolve_startup_source(settings: SettingsStore):
     env_source = os.getenv("CAMERA_SOURCE")
     if env_source:
         return str(env_source), None
-    return "0", None
+    return None, last
 
 
 def _active_webcam_index():
@@ -119,10 +119,6 @@ async def lifespan(app: FastAPI):
     settings_store = SettingsStore()
     _telemetry_interval = float(os.getenv("TELEMETRY_INTERVAL_SEC", "1.0"))
     source, last_camera = _resolve_startup_source(settings_store)
-    _active_source = source
-    print(f"[STARTUP] Menginisialisasi Video Source [{source}], Focus Predictor & Pomodoro Service...")
-    print(f"[STARTUP] Telemetry interval: {_telemetry_interval}s")
-    print(f"[STARTUP] Voice alert: enabled={NARA_ALERT_ENABLED} lang={NARA_ALERT_LANGUAGE}")
     loop = asyncio.get_running_loop()
 
     def _on_device_discovered(device_info, old_record):
@@ -133,56 +129,80 @@ async def lifespan(app: FastAPI):
         if not new_ip or not new_url:
             return
 
-        last = settings_store.get_last_camera() if settings_store else None
-        is_current_esp = False
-        if isinstance(last, dict) and last.get("kind") == "esp":
-            if last.get("device_id") == device_id or last.get("id") == f"esp:{device_id}":
-                is_current_esp = True
-        elif isinstance(_active_source, str) and ("http" in _active_source and ":81" in _active_source):
-            is_current_esp = True
+        current_str = str(_active_source).strip()
+        is_current_webcam = current_str.isdigit() or current_str in ("0", "1", "2", "3")
+        is_esp_source = isinstance(_active_source, str) and ("http" in _active_source and ":81" in _active_source)
+        ip_changed = bool(old_record and old_record.get("ip") != new_ip)
+        url_changed = bool(_active_source != new_url)
 
-        if is_current_esp:
-            current_url = str(_active_source)
-            if new_url != current_url or (old_record and old_record.get("ip") != new_ip):
-                old_ip = (old_record.get("ip") if old_record else None) or (last.get("ip") if last else "unknown")
-                print(f"[INFO] 🔄 Alamat IP ESP32 ({device_id}) berpindah: {old_ip} -> {new_ip}. Mengalihkan stream kamera...")
-                _active_source = new_url
-                if video_source is not None:
-                    video_source.switch(new_url)
-                record = {
-                    "id": f"esp:{device_id}",
-                    "kind": "esp",
-                    "source": new_url,
-                    "device_id": device_id,
-                    "ip": new_ip,
-                    "name": device_info.get("name") or "NARA Device",
-                    "stream_port": device_info.get("stream_port", 81),
-                }
-                if settings_store is not None:
-                    settings_store.set_last_camera(record)
-                if voice_alert_client is not None:
-                    voice_alert_client.camera_ip = new_ip
-                if bridge is not None and loop is not None:
-                    asyncio.run_coroutine_threadsafe(bridge.attach(record), loop)
+        # Jika saat ini masih memakai webcam ATAU alamat IP ESP berubah ATAU belum menggunakan stream ini:
+        # OTOMATIS ALIH KE ESP KARENA NARA DEVICE ADALAH PRIORITAS UTAMA!
+        if is_current_webcam or not is_esp_source or ip_changed or url_changed:
+            old_src = _active_source
+            print(f"[DISCOVERY] 🎯 NARA Device aktif terdeteksi ({device_id} di {new_ip})! Mengalihkan kamera secara otomatis ({old_src} -> {new_url})...")
+            _active_source = new_url
+            if video_source is not None:
+                video_source.switch(new_url)
+            record = {
+                "id": f"esp:{device_id}",
+                "kind": "esp",
+                "source": new_url,
+                "device_id": device_id,
+                "ip": new_ip,
+                "name": device_info.get("name") or "NARA Device",
+                "stream_port": device_info.get("stream_port", 81),
+            }
+            if settings_store is not None:
+                settings_store.set_last_camera(record)
+            if voice_alert_client is not None:
+                voice_alert_client.camera_ip = new_ip
+            if bridge is not None and loop is not None:
+                asyncio.run_coroutine_threadsafe(bridge.attach(record), loop)
+            if loop is not None:
+                asyncio.run_coroutine_threadsafe(
+                    _broadcast({
+                        "type": "camera_auto_switched",
+                        "camera": record,
+                        "device": _device_status()
+                    }),
+                    loop
+                )
 
     discovery = DeviceDiscovery(on_device_updated=_on_device_discovered)
     discovery.start()
 
-    # Jika kamera aktif terakhir adalah ESP, segera lakukan probe UDP untuk mendeteksi IP saat ini secara otomatis!
-    if isinstance(last_camera, dict) and last_camera.get("kind") == "esp":
-        print("[STARTUP] 🔍 Memindai NARA Device di jaringan lokal (UDP Discovery)...")
-        found = discovery.probe_udp(timeout=0.8)
-        devices = discovery.list_devices()
-        if devices:
+    # Selalu lakukan probe UDP saat booting untuk mendeteksi NARA Device secara instan di jaringan lokal!
+    print("[STARTUP] 🔍 Memindai NARA Device di jaringan lokal (UDP Discovery)...")
+    found = discovery.probe_udp(timeout=1.0)
+    devices = discovery.list_devices()
+    if devices:
+        matched = devices[0]
+        if isinstance(last_camera, dict) and last_camera.get("device_id"):
             matched = next((d for d in devices if d.get("id") == last_camera.get("device_id")), devices[0])
-            source = matched["stream_url"]
-            _active_source = source
-            print(f"[STARTUP] ✅ NARA Device otomatis ditemukan di {matched['ip']} ({source})")
-            last_camera["ip"] = matched["ip"]
-            last_camera["source"] = source
-            settings_store.set_last_camera(last_camera)
-        else:
-            print("[STARTUP] ℹ️ NARA Device belum terdeteksi saat booting. Auto-discovery background tetap aktif.")
+        source = matched["stream_url"]
+        _active_source = source
+        print(f"[STARTUP] ✅ NARA Device otomatis ditemukan di {matched['ip']} ({source})")
+        last_camera = {
+            "id": f"esp:{matched['id']}",
+            "kind": "esp",
+            "source": source,
+            "device_id": matched["id"],
+            "ip": matched["ip"],
+            "name": matched.get("name") or "NARA Device",
+            "stream_port": matched.get("stream_port", 81),
+        }
+        settings_store.set_last_camera(last_camera)
+    elif source:
+        _active_source = source
+        print(f"[STARTUP] ℹ️ Menggunakan target kamera tersimpan: {source}. Auto-discovery background tetap aktif.")
+    else:
+        source = "0"
+        _active_source = "0"
+        print("[STARTUP] ℹ️ NARA Device belum terdeteksi saat booting. Menggunakan Webcam lokal (0). Auto-discovery background tetap aktif.")
+
+    print(f"[STARTUP] Menginisialisasi Video Source [{source}], Focus Predictor & Pomodoro Service...")
+    print(f"[STARTUP] Telemetry interval: {_telemetry_interval}s")
+    print(f"[STARTUP] Voice alert: enabled={NARA_ALERT_ENABLED} lang={NARA_ALERT_LANGUAGE}")
 
     video_source = VideoSource(source)
     predictor = FocusPredictor()
@@ -725,12 +745,12 @@ async def api_cameras():
                 row = dict(cam)
                 if active is not None and row.get("index") == active:
                     row["available"] = True
-        # Hanya sertakan webcam lokal yang terdeteksi / tersedia
-        cameras = [c for c in items if c.get("available")]
+        cameras = []
+        esp_cameras = []
         if discovery is not None:
             for dev in discovery.list_devices():
                 dev_label = f"NARA Device ({dev['ip']})" if dev.get("ip") else "NARA Device"
-                cameras.append({
+                esp_cameras.append({
                     "id": f"esp:{dev['id']}",
                     "name": dev_label,
                     "kind": "esp",
@@ -742,7 +762,23 @@ async def api_cameras():
                     "available": True,
                     "last_seen": dev.get("last_seen"),
                 })
-        body = {"cameras": cameras, "selected_id": _selected_id()}
+        # Prioritas 1: NARA Device (ESP32) selalu di urutan paling atas
+        cameras.extend(esp_cameras)
+        # Prioritas 2: Webcam lokal di bawahnya
+        cameras.extend([c for c in items if c.get("available")])
+
+        # Tentukan selected_id: jika ada ESP, prioritaskan ESP
+        selected = _selected_id()
+        if (not selected or selected.startswith("webcam:")) and esp_cameras:
+            selected = esp_cameras[0]["id"]
+            # Sinkronkan backend jika saat ini masih mengarah ke webcam
+            if isinstance(_active_source, str) and (_active_source.isdigit() or _active_source in ("0", "1", "2", "3")):
+                target_url = esp_cameras[0]["source"]
+                _active_source = target_url
+                if video_source is not None:
+                    video_source.switch(target_url)
+
+        body = {"cameras": cameras, "selected_id": selected}
         body.update(_audio_fields())
         return JSONResponse(body)
     except Exception:
@@ -777,7 +813,15 @@ async def api_camera_select(request: Request):
             return JSONResponse({"ok": True, "camera": record, "device": _device_status()})
         if camera_id.startswith("esp:"):
             device_id = camera_id.split(":", 1)[1]
-            device = discovery.get(device_id) if discovery is not None else None
+            device = None
+            if discovery is not None:
+                device = discovery.get(device_id) or discovery.get(camera_id)
+                if not device:
+                    device = next((d for d in discovery.list_devices() if d.get("id") == device_id or f"esp:{d.get('id')}" == camera_id), None)
+            if device is None and settings_store is not None:
+                last = settings_store.get_last_camera()
+                if isinstance(last, dict) and (last.get("device_id") == device_id or last.get("id") == camera_id):
+                    device = last
             if device is None:
                 return JSONResponse({"ok": False, "error": "Kamera tidak ditemukan."}, status_code=404)
             await asyncio.to_thread(video_source.switch, device["stream_url"])
@@ -790,10 +834,10 @@ async def api_camera_select(request: Request):
                 "id": camera_id,
                 "kind": "esp",
                 "source": device["stream_url"],
-                "device_id": device["id"],
-                "ip": device["ip"],
-                "name": device.get("name"),
-                "stream_port": device.get("stream_port"),
+                "device_id": device.get("device_id") or device.get("id"),
+                "ip": device.get("ip"),
+                "name": device.get("name") or "NARA Device",
+                "stream_port": device.get("stream_port", 81),
             }
             _remember_camera(record)
             return JSONResponse({"ok": True, "camera": record, "device": _device_status()})
